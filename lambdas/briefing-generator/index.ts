@@ -199,7 +199,11 @@ async function updateManifest(bucket: string, newEntry: ManifestEntry): Promise<
   try {
     const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: 'manifest.json' }));
     const body = await res.Body?.transformToString('utf-8');
-    if (body) existing = JSON.parse(body);
+    if (body) {
+      const parsed = JSON.parse(body);
+      // Accept both { briefings: [...] } and a bare [] (e.g. manual reset)
+      existing = Array.isArray(parsed) ? { briefings: [] } : parsed;
+    }
   } catch {
     console.log('[manifest] Starting fresh (no existing manifest.json)');
   }
