@@ -13,12 +13,16 @@
     "synth": "cdk synth"
   },
   "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
     "@types/node": "22.x",
     "aws-cdk": "2.x",
+    "esbuild": "^0.25.0",
     "typescript": "~5.7"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "aws-cdk-lib": "2.x",
-    "constructs": "^10.0.0"
+    "constructs": "^10.0.0",
+    "fast-xml-parser": "^4.5.0"
   }
 }

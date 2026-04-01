@@ -1,0 +1,7 @@
+{
+  "name": "briefing-pushover-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pushover notification Lambda — sends iPhone push when a briefing is generated",
+  "dependencies": {}
+}

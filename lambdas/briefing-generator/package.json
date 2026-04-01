@@ -1,0 +1,10 @@
+{
+  "name": "briefing-generator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Briefings generator Lambda — fetches news/weather/markets, calls Claude, generates HTML",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "fast-xml-parser": "^4.5.0"
+  }
+}

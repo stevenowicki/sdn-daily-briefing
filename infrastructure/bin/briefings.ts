@@ -3,6 +3,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { BriefingsHostingStack } from '../lib/briefings-hosting-stack';
 import { BriefingsCiStack } from '../lib/briefings-ci-stack';
+import { BriefingsGeneratorStack } from '../lib/briefings-generator-stack';
 
 const app = new cdk.App();
 
@@ -29,6 +30,24 @@ const hostingStack = new BriefingsHostingStack(app, `Briefings-Hosting-${envName
   customDomain: isProd ? 'briefings.stevenowicki.com' : 'dev.briefings.stevenowicki.com',
   hostedZoneDomainName: 'stevenowicki.com',
   hostedZoneId: 'ZOSJEODV7MORU',
+  env,
+  tags: {
+    Project: 'Briefings',
+    Environment: envName,
+    ManagedBy: 'CDK',
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Generator stack: Lambda + EventBridge schedules + SNS fan-out + Pushover
+// Schedules are only enabled in prod; dev can invoke the Lambda manually.
+// ---------------------------------------------------------------------------
+new BriefingsGeneratorStack(app, `Briefings-Generator-${envName}`, {
+  envName,
+  bucketName: hostingStack.bucketName,
+  distributionId: hostingStack.distributionId,
+  siteUrl: isProd ? 'https://briefings.stevenowicki.com' : 'https://dev.briefings.stevenowicki.com',
+  enableSchedules: isProd,
   env,
   tags: {
     Project: 'Briefings',

@@ -8,6 +8,9 @@ infrastructure/node_modules/
 infrastructure/dist/
 infrastructure/cdk.out/
 
+# Lambda node_modules
+lambdas/*/node_modules/
+
 # Scripts
 node_modules/
 
