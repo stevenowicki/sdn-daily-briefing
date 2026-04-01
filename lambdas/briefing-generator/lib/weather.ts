@@ -39,8 +39,10 @@ export interface WeatherData {
   };
 }
 
-export async function fetchWeather(zipCode = '10010'): Promise<WeatherData> {
-  const url = `https://wttr.in/${zipCode}?format=j1`;
+export async function fetchWeather(): Promise<WeatherData> {
+  // Use coordinates for StuyTown/Peter Cooper Village to avoid wttr.in
+  // misresolving "10010" as a location in Taiwan instead of Manhattan.
+  const url = `https://wttr.in/40.7282,-73.9842?format=j1`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
 
