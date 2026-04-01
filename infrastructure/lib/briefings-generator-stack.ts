@@ -22,6 +22,9 @@
  *  - SQS Queue: briefings-pushover-queue  ← subscribed to SNS topic
  *  - SQS DLQ:   briefings-pushover-dlq    (after 3 failed delivery attempts)
  *
+ *  - SQS Queue: briefings-slack-queue     ← subscribed to SNS topic
+ *  - SQS DLQ:   briefings-slack-dlq       (after 3 failed delivery attempts)
+ *
  *  Future listeners: add an SQS queue + SNS subscription + Lambda.
  *  No changes needed to the generator Lambda.
  *
@@ -37,6 +40,7 @@
  *  - Generator Lambda role: S3 r/w on briefings bucket, SNS publish,
  *                           SSM GetParameter (anthropic key)
  *  - Pushover Lambda role: SQS consume, SSM GetParameter (pushover creds)
+ *  - Slack Lambda role:   SQS consume, SSM GetParameter (slack webhook url)
  */
 
 import * as cdk from 'aws-cdk-lib';
@@ -205,6 +209,72 @@ export class BriefingsGeneratorStack extends cdk.Stack {
       ],
     }));
     pushoverLambda.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['kms:Decrypt'],
+      resources: ['arn:aws:kms:*:*:alias/aws/ssm'],
+    }));
+
+    // -----------------------------------------------------------------------
+    // Slack SQS Queue  (fan-out subscriber #2)
+    // -----------------------------------------------------------------------
+    const slackDlq = new sqs.Queue(this, 'SlackDLQ', {
+      queueName: `briefings-slack-dlq-${envName}`,
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    const slackQueue = new sqs.Queue(this, 'SlackQueue', {
+      queueName: `briefings-slack-queue-${envName}`,
+      visibilityTimeout: cdk.Duration.seconds(60),
+      deadLetterQueue: {
+        queue: slackDlq,
+        maxReceiveCount: 3,
+      },
+    });
+
+    // Subscribe the Slack queue to the SNS topic
+    briefingsTopic.addSubscription(new snsSubscriptions.SqsSubscription(slackQueue, {
+      rawMessageDelivery: true,
+    }));
+
+    // -----------------------------------------------------------------------
+    // Lambda: briefing-slack-notifier
+    // -----------------------------------------------------------------------
+    const slackLambda = new lambdaNode.NodejsFunction(this, 'SlackLambda', {
+      functionName: `briefings-slack-notifier-${envName}`,
+      description: 'Posts a Slack Block Kit message when a briefing is generated',
+      entry: path.join(__dirname, '../../lambdas/briefing-slack/index.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        SSM_SLACK_WEBHOOK_URL: '/briefings/slack-webhook-url',
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: false,
+        sourceMap: true,
+        target: 'node22',
+        format: lambdaNode.OutputFormat.CJS,
+      },
+    });
+
+    // Wire the Slack queue to trigger the Slack Lambda
+    slackLambda.addEventSource(new lambdaEventSources.SqsEventSource(slackQueue, {
+      batchSize: 1,
+      reportBatchItemFailures: true,
+    }));
+
+    // Grant SSM GetParameter for Slack webhook URL
+    slackLambda.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/briefings/slack-webhook-url`,
+      ],
+    }));
+    slackLambda.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['kms:Decrypt'],
       resources: ['arn:aws:kms:*:*:alias/aws/ssm'],

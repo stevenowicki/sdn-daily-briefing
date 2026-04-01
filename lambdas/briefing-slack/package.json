@@ -1,0 +1,7 @@
+{
+  "name": "briefing-slack-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Slack notification Lambda — posts a Block Kit message when a briefing is generated",
+  "dependencies": {}
+}
