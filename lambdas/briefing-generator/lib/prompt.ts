@@ -83,6 +83,7 @@ export const HTML_TEMPLATE = `<!DOCTYPE html>
       .market-label { color: #f1f5f9 !important; }
       .market-row { border-bottom-color: #334155 !important; }
       .market-sub { color: #64748b !important; }
+      .weather-main strong { color: #f1f5f9 !important; }
       .umbrella-note { background: #1c1917 !important; }
       header { background: #020617 !important; }
       footer { background: #020617 !important; color: #94a3b8 !important; }
