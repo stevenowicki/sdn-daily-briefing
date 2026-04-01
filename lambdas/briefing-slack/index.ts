@@ -36,7 +36,7 @@ async function getWebhookUrl(): Promise<string> {
 // ---------------------------------------------------------------------------
 interface BriefingEvent {
   emoji: string;
-  label: 'Morning' | 'Evening';
+  label: 'Morning' | 'Evening' | 'Late Night';
   date: string;        // "2026-04-01"
   fullUrl: string;     // "https://briefings.stevenowicki.com/2026/04/01-0800.html"
   summary: string;

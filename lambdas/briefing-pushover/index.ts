@@ -40,7 +40,7 @@ async function getCredentials(): Promise<{ token: string; userKey: string }> {
 // ---------------------------------------------------------------------------
 interface BriefingEvent {
   emoji: string;
-  label: 'Morning' | 'Evening';
+  label: 'Morning' | 'Evening' | 'Late Night';
   date: string;
   fullUrl: string;
   summary: string;

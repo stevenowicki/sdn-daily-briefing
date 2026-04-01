@@ -203,7 +203,7 @@ export const HTML_TEMPLATE = `<!DOCTYPE html>
 // User prompt builder — assembles the full prompt from live data
 // ---------------------------------------------------------------------------
 export interface PromptData {
-  label: 'Morning' | 'Evening';
+  label: 'Morning' | 'Evening' | 'Late Night';
   emoji: string;
   dateStr: string;        // "Tuesday, April 1, 2026"
   weather: string;        // Pre-formatted weather summary

@@ -27,6 +27,9 @@
       --evening-accent: #4f46e5;
       --evening-bg: #ede9fe;
       --evening-text: #3730a3;
+      --latenight-accent: #0891b2;
+      --latenight-bg: #cffafe;
+      --latenight-text: #155e75;
       --featured-border: #0f172a;
       --section-heading: #0f172a;
       --card-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
@@ -53,6 +56,9 @@
         --evening-accent: #818cf8;
         --evening-bg: #1e1b4b;
         --evening-text: #a5b4fc;
+        --latenight-accent: #22d3ee;
+        --latenight-bg: #0a2533;
+        --latenight-text: #67e8f9;
         --featured-border: #334155;
         --section-heading: #f1f5f9;
         --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
@@ -223,6 +229,11 @@
       color: var(--evening-text);
     }
 
+    .featured-label.late-night {
+      background: var(--latenight-bg);
+      color: var(--latenight-text);
+    }
+
     .featured-date {
       font-size: 1.15rem;
       font-weight: 800;
@@ -325,6 +336,11 @@
     .card-label.evening {
       background: var(--evening-bg);
       color: var(--evening-text);
+    }
+
+    .card-label.late-night {
+      background: var(--latenight-bg);
+      color: var(--latenight-text);
     }
 
     .card-date {
@@ -513,11 +529,17 @@
     }
 
     function labelClass(label) {
-      return label.toLowerCase() === 'morning' ? 'morning' : 'evening';
+      const l = label.toLowerCase();
+      if (l === 'morning') return 'morning';
+      if (l === 'late night') return 'late-night';
+      return 'evening';
     }
 
     function labelEmoji(label) {
-      return label.toLowerCase() === 'morning' ? '☀️' : '🌆';
+      const l = label.toLowerCase();
+      if (l === 'morning') return '☀️';
+      if (l === 'late night') return '🌙';
+      return '🌆';
     }
 
     // =========================================================

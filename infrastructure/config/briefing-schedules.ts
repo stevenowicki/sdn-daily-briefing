@@ -16,9 +16,9 @@
 
 export interface BriefingSchedule {
   /** Short identifier used in resource names */
-  name: 'morning' | 'evening';
+  name: 'morning' | 'evening' | 'late-night';
   /** Human-readable label used in the briefing title and manifest */
-  label: 'Morning' | 'Evening';
+  label: 'Morning' | 'Evening' | 'Late Night';
   /** Display time in HH:MM 24h ET — used in manifest.json */
   time: string;
   /** EventBridge Scheduler cron expression — runs in America/New_York */
@@ -41,5 +41,12 @@ export const BRIEFING_SCHEDULES: BriefingSchedule[] = [
     time: '17:30',
     scheduleExpression: 'cron(30 17 * * ? *)',  // 5:30pm ET every day
     emoji: '🌆',
+  },
+  {
+    name: 'late-night',
+    label: 'Late Night',
+    time: '23:00',
+    scheduleExpression: 'cron(0 23 * * ? *)',   // 11:00pm ET every day
+    emoji: '🌙',
   },
 ];
