@@ -48,7 +48,7 @@ function buildSlackPayload(event: BriefingEvent): object {
   });
 
   const headerText = `${event.emoji} ${event.label} Briefing — ${displayDate}`;
-  const summaryText = event.summary || `Your ${event.label.toLowerCase()} briefing is ready.`;
+  const summaryText = `<!channel> ${event.summary || `Your ${event.label.toLowerCase()} briefing is ready.`}`;
 
   return {
     blocks: [
