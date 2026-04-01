@@ -9,7 +9,7 @@
  *   ┌─────────────────────────────────────────────────┐
  *   │  ☀️  Morning Briefing — April 1, 2026           │  ← header
  *   │  2-3 sentence summary of the briefing...        │  ← section
- *   │  [ Open Briefing → ]                            │  ← button
+ *   │  Open Briefing →                                │  ← markdown link (no interactivity needed)
  *   └─────────────────────────────────────────────────┘
  */
 
@@ -61,15 +61,8 @@ function buildSlackPayload(event: BriefingEvent): object {
         text: { type: 'mrkdwn', text: summaryText },
       },
       {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: 'Open Briefing', emoji: true },
-            url: event.fullUrl,
-            style: 'primary',
-          },
-        ],
+        type: 'section',
+        text: { type: 'mrkdwn', text: `<${event.fullUrl}|Open ${event.label} Briefing →>` },
       },
     ],
   };
