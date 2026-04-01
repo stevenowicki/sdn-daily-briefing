@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Steve's Daily Briefings</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%231a1a2e'/><text x='4' y='24' font-size='22'>📰</text></svg>">
+  <style>
+    /* =========================================================
+       Reset & base
+    ========================================================= */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f3ee;
+      --surface: #ffffff;
+      --masthead-bg: #0f172a;
+      --masthead-text: #f8fafc;
+      --masthead-sub: #94a3b8;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --border: #e2e8f0;
+      --morning-accent: #d97706;
+      --morning-bg: #fef3c7;
+      --morning-text: #92400e;
+      --evening-accent: #4f46e5;
+      --evening-bg: #ede9fe;
+      --evening-text: #3730a3;
+      --featured-border: #0f172a;
+      --section-heading: #0f172a;
+      --card-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+      --card-hover-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      --link-color: #0f172a;
+      --pill-bg: #f1f5f9;
+      --pill-text: #475569;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --masthead-bg: #020617;
+        --masthead-text: #f8fafc;
+        --masthead-sub: #64748b;
+        --text-primary: #f1f5f9;
+        --text-secondary: #94a3b8;
+        --text-muted: #64748b;
+        --border: #334155;
+        --morning-accent: #f59e0b;
+        --morning-bg: #1c1917;
+        --morning-text: #fcd34d;
+        --evening-accent: #818cf8;
+        --evening-bg: #1e1b4b;
+        --evening-text: #a5b4fc;
+        --featured-border: #334155;
+        --section-heading: #f1f5f9;
+        --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        --card-hover-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        --link-color: #f1f5f9;
+        --pill-bg: #1e293b;
+        --pill-text: #94a3b8;
+      }
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* =========================================================
+       Masthead
+    ========================================================= */
+    .masthead {
+      background: var(--masthead-bg);
+      color: var(--masthead-text);
+      padding: 20px 16px 18px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .masthead-inner {
+      max-width: 720px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .masthead-title {
+      font-size: clamp(0.95rem, 3vw, 1.05rem);
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      line-height: 1.1;
+    }
+
+    .masthead-date {
+      font-size: 0.72rem;
+      color: var(--masthead-sub);
+      letter-spacing: 0.04em;
+      margin-top: 3px;
+    }
+
+    .masthead-icon {
+      font-size: 1.5rem;
+      flex-shrink: 0;
+      opacity: 0.9;
+    }
+
+    /* Year navigation */
+    .year-nav {
+      max-width: 720px;
+      margin: 0 auto;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .year-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.55);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      background: transparent;
+    }
+
+    .year-pill:hover,
+    .year-pill.active {
+      background: rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.9);
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    /* =========================================================
+       Main content
+    ========================================================= */
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px 16px 64px;
+    }
+
+    /* =========================================================
+       Section header
+    ========================================================= */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .section-toggle {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+
+    .section-toggle.collapsed { transform: rotate(-90deg); }
+
+    /* =========================================================
+       Featured card (latest briefing)
+    ========================================================= */
+    .featured-card {
+      background: var(--surface);
+      border: 2px solid var(--featured-border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--card-shadow);
+      transition: box-shadow 0.2s;
+    }
+
+    .featured-card:hover { box-shadow: var(--card-hover-shadow); }
+
+    .featured-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+
+    .featured-label.morning {
+      background: var(--morning-bg);
+      color: var(--morning-text);
+    }
+
+    .featured-label.evening {
+      background: var(--evening-bg);
+      color: var(--evening-text);
+    }
+
+    .featured-date {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      line-height: 1.2;
+    }
+
+    .featured-time {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .featured-summary {
+      font-size: 0.975rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      margin-bottom: 20px;
+    }
+
+    .featured-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: var(--text-primary);
+      border: 1.5px solid var(--text-primary);
+      border-radius: 6px;
+      padding: 8px 16px;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .featured-cta:hover {
+      background: var(--text-primary);
+      color: var(--surface);
+    }
+
+    /* =========================================================
+       Month section
+    ========================================================= */
+    .month-section { margin-bottom: 28px; }
+
+    .month-section.hidden > .card-grid { display: none; }
+
+    /* =========================================================
+       Card grid
+    ========================================================= */
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 480px) {
+      .card-grid { grid-template-columns: 1fr; }
+    }
+
+    /* =========================================================
+       Briefing card
+    ========================================================= */
+    .briefing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: box-shadow 0.15s, transform 0.15s;
+      cursor: pointer;
+    }
+
+    .briefing-card:hover {
+      box-shadow: var(--card-hover-shadow);
+      transform: translateY(-1px);
+    }
+
+    .card-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.67rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 999px;
+      width: fit-content;
+    }
+
+    .card-label.morning {
+      background: var(--morning-bg);
+      color: var(--morning-text);
+    }
+
+    .card-label.evening {
+      background: var(--evening-bg);
+      color: var(--evening-text);
+    }
+
+    .card-date {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .card-time {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .card-summary {
+      font-size: 0.825rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* =========================================================
+       Skeleton loader
+    ========================================================= */
+    @keyframes shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+
+    .skeleton {
+      border-radius: 12px;
+      background: linear-gradient(90deg, var(--border) 25%, var(--bg) 50%, var(--border) 75%);
+      background-size: 800px 100%;
+      animation: shimmer 1.4s infinite linear;
+    }
+
+    .skeleton-featured {
+      height: 180px;
+      margin-bottom: 32px;
+    }
+
+    .skeleton-card { height: 130px; }
+
+    /* =========================================================
+       Error state
+    ========================================================= */
+    .error-state {
+      text-align: center;
+      padding: 48px 16px;
+      color: var(--text-secondary);
+    }
+
+    .error-state-icon {
+      font-size: 2.5rem;
+      margin-bottom: 12px;
+    }
+
+    .error-state h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    .error-state p {
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+
+    .error-retry {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .error-retry:hover { background: var(--bg); }
+
+    /* =========================================================
+       Empty archive
+    ========================================================= */
+    .empty-archive {
+      text-align: center;
+      padding: 32px;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    /* =========================================================
+       Divider
+    ========================================================= */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 28px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Masthead -->
+  <header class="masthead" role="banner">
+    <div class="masthead-inner">
+      <div class="masthead-icon" aria-hidden="true">📰</div>
+      <div>
+        <div class="masthead-title">Steve's Daily Briefings</div>
+        <div class="masthead-date" id="mastheadDate"></div>
+      </div>
+    </div>
+    <nav class="year-nav" id="yearNav" aria-label="Year navigation"></nav>
+  </header>
+
+  <!-- Main -->
+  <main id="main" role="main">
+    <!-- Skeleton while loading -->
+    <div id="skeleton" aria-busy="true" aria-label="Loading briefings">
+      <div class="skeleton skeleton-featured"></div>
+      <div class="card-grid">
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+    </div>
+
+    <!-- Content injected by JS -->
+    <div id="content" hidden></div>
+
+    <!-- Error state -->
+    <div id="errorState" hidden class="error-state" role="alert">
+      <div class="error-state-icon" aria-hidden="true">⚠️</div>
+      <h2>Couldn't load briefings</h2>
+      <p>There was a problem fetching the briefings manifest.<br>Check your connection and try again.</p>
+      <button class="error-retry" id="retryBtn" onclick="loadManifest()">Try again</button>
+    </div>
+  </main>
+
+  <script>
+    // =========================================================
+    // Utilities
+    // =========================================================
+    const MONTHS = [
+      'January','February','March','April','May','June',
+      'July','August','September','October','November','December'
+    ];
+
+    function formatDisplayDate(isoDate) {
+      // isoDate: "2026-04-01"
+      const [y, m, d] = isoDate.split('-').map(Number);
+      return `${MONTHS[m - 1]} ${d}, ${y}`;
+    }
+
+    function formatTime(timeStr) {
+      // timeStr: "08:00" or "17:30"
+      const [h, min] = timeStr.split(':').map(Number);
+      const period = h >= 12 ? 'pm' : 'am';
+      const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return min === 0 ? `${displayH}${period}` : `${displayH}:${String(min).padStart(2,'0')}${period}`;
+    }
+
+    function monthYearKey(isoDate) {
+      // Returns "2026-04" for grouping
+      return isoDate.slice(0, 7);
+    }
+
+    function monthYearLabel(key) {
+      // "2026-04" → "April 2026"
+      const [y, m] = key.split('-').map(Number);
+      return `${MONTHS[m - 1]} ${y}`;
+    }
+
+    function yearFromDate(isoDate) {
+      return isoDate.slice(0, 4);
+    }
+
+    function labelClass(label) {
+      return label.toLowerCase() === 'morning' ? 'morning' : 'evening';
+    }
+
+    function labelEmoji(label) {
+      return label.toLowerCase() === 'morning' ? '☀️' : '🌆';
+    }
+
+    // =========================================================
+    // Render helpers
+    // =========================================================
+    function renderFeatured(b) {
+      const lc = labelClass(b.label);
+      const displayDate = formatDisplayDate(b.date);
+      const displayTime = formatTime(b.time);
+      return `
+        <article class="featured-card" aria-label="Latest briefing: ${b.label} ${displayDate}">
+          <div class="featured-label ${lc}" aria-hidden="true">
+            <span>${labelEmoji(b.label)}</span>
+            <span>${b.label} Briefing</span>
+          </div>
+          <div class="featured-date">${displayDate}</div>
+          <time class="featured-time" datetime="${b.isoTimestamp}">${displayTime} ET</time>
+          <p class="featured-summary">${escHtml(b.summary)}</p>
+          <a class="featured-cta" href="${escAttr(b.url)}" aria-label="Read the full ${b.label} briefing from ${displayDate}">
+            Read Full Briefing &rarr;
+          </a>
+        </article>
+      `;
+    }
+
+    function renderCard(b) {
+      const lc = labelClass(b.label);
+      const displayDate = formatDisplayDate(b.date);
+      const displayTime = formatTime(b.time);
+      return `
+        <article class="briefing-card"
+                 role="article"
+                 tabindex="0"
+                 aria-label="${b.label} briefing — ${displayDate}"
+                 onclick="window.location='${escAttr(b.url)}'"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){window.location='${escAttr(b.url)}'}">
+          <div class="card-label ${lc}" aria-hidden="true">
+            <span>${labelEmoji(b.label)}</span>
+            <span>${b.label}</span>
+          </div>
+          <div>
+            <div class="card-date">${displayDate}</div>
+            <time class="card-time" datetime="${b.isoTimestamp}">${displayTime} ET</time>
+          </div>
+          <p class="card-summary">${escHtml(b.summary)}</p>
+        </article>
+      `;
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+    }
+
+    function escAttr(str) {
+      return String(str)
+        .replace(/&/g,'&amp;')
+        .replace(/"/g,'&quot;');
+    }
+
+    // =========================================================
+    // Year navigation
+    // =========================================================
+    let currentYear = String(new Date().getFullYear());
+
+    function renderYearNav(years) {
+      const nav = document.getElementById('yearNav');
+      nav.innerHTML = years.map(y => `
+        <button class="year-pill${y === currentYear ? ' active' : ''}"
+                onclick="selectYear('${y}')"
+                aria-label="Show ${y} briefings"
+                aria-pressed="${y === currentYear}">
+          ${y}
+        </button>
+      `).join('');
+    }
+
+    function selectYear(year) {
+      currentYear = year;
+      // Update pill states
+      document.querySelectorAll('.year-pill').forEach(pill => {
+        const active = pill.textContent.trim() === year;
+        pill.classList.toggle('active', active);
+        pill.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      // Show/hide year sections
+      document.querySelectorAll('.year-section').forEach(section => {
+        section.hidden = section.dataset.year !== year;
+      });
+    }
+
+    // =========================================================
+    // Main render
+    // =========================================================
+    function renderContent(briefings) {
+      if (!briefings || briefings.length === 0) {
+        document.getElementById('content').innerHTML = '<p class="empty-archive">No briefings yet.</p>';
+        return;
+      }
+
+      // Group by year → month
+      const byYear = {};
+      briefings.forEach(b => {
+        const year = yearFromDate(b.date);
+        const month = monthYearKey(b.date);
+        if (!byYear[year]) byYear[year] = {};
+        if (!byYear[year][month]) byYear[year][month] = [];
+        byYear[year][month].push(b);
+      });
+
+      const years = Object.keys(byYear).sort((a,b) => b - a);
+
+      // Year nav
+      renderYearNav(years);
+
+      let html = '';
+
+      // Featured: the first (most recent) briefing
+      const latest = briefings[0];
+      html += `
+        <section aria-label="Latest briefing">
+          <div class="section-header" aria-hidden="true">
+            <span class="section-title">Latest</span>
+          </div>
+          ${renderFeatured(latest)}
+        </section>
+      `;
+
+      // Archive by year → month
+      years.forEach((year, yIdx) => {
+        const isCurrentYear = year === currentYear;
+        html += `<div class="year-section" data-year="${year}"${!isCurrentYear ? ' hidden' : ''}>`;
+
+        const months = Object.keys(byYear[year]).sort((a,b) => b.localeCompare(a));
+        months.forEach((monthKey, mIdx) => {
+          const monthBriefings = byYear[year][monthKey];
+          // Skip showing the very latest in the archive grid (it's in the featured card)
+          const gridBriefings = (yIdx === 0 && mIdx === 0)
+            ? monthBriefings.slice(1)
+            : monthBriefings;
+
+          // For the latest year's first month, always show (don't collapse)
+          const isFirst = yIdx === 0 && mIdx === 0;
+          const sectionId = `section-${monthKey.replace('-','')}`;
+
+          html += `
+            <section class="month-section${isFirst ? '' : ''}" id="${sectionId}" aria-label="${monthYearLabel(monthKey)}">
+              <div class="section-header" role="button" tabindex="0"
+                   aria-expanded="true" aria-controls="${sectionId}-grid"
+                   onclick="toggleSection('${sectionId}')"
+                   onkeydown="if(event.key==='Enter'||event.key===' '){toggleSection('${sectionId}')}">
+                <span class="section-title">${monthYearLabel(monthKey)}</span>
+                <span class="section-toggle" aria-hidden="true">&#9660;</span>
+              </div>
+              <div class="card-grid" id="${sectionId}-grid">
+          `;
+
+          if (gridBriefings.length === 0) {
+            html += `<p class="empty-archive" style="grid-column:1/-1">No other briefings this month.</p>`;
+          } else {
+            gridBriefings.forEach(b => { html += renderCard(b); });
+          }
+
+          html += `</div></section>`;
+        });
+
+        html += `</div>`; // year-section
+      });
+
+      document.getElementById('content').innerHTML = html;
+    }
+
+    function toggleSection(sectionId) {
+      const section = document.getElementById(sectionId);
+      const grid = document.getElementById(sectionId + '-grid');
+      const toggle = section.querySelector('.section-toggle');
+      const header = section.querySelector('.section-header');
+      const isExpanded = header.getAttribute('aria-expanded') === 'true';
+
+      header.setAttribute('aria-expanded', isExpanded ? 'false' : 'true');
+      toggle.classList.toggle('collapsed', isExpanded);
+      grid.style.display = isExpanded ? 'none' : '';
+    }
+
+    // =========================================================
+    // Data loading
+    // =========================================================
+    async function loadManifest() {
+      const skeleton = document.getElementById('skeleton');
+      const content = document.getElementById('content');
+      const errorState = document.getElementById('errorState');
+
+      // Reset to loading state
+      skeleton.hidden = false;
+      content.hidden = true;
+      errorState.hidden = true;
+
+      try {
+        const res = await fetch('/manifest.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        skeleton.hidden = true;
+        content.hidden = false;
+        renderContent(data.briefings || []);
+      } catch (err) {
+        console.error('Failed to load manifest.json:', err);
+        skeleton.hidden = true;
+        errorState.hidden = false;
+      }
+    }
+
+    // =========================================================
+    // Init
+    // =========================================================
+    document.getElementById('mastheadDate').textContent = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    loadManifest();
+  </script>
+</body>
+</html>

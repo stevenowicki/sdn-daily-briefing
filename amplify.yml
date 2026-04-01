@@ -1,0 +1,44 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - echo "Branch=$AWS_BRANCH"
+        - export DEPLOY_ENV=$([ "$AWS_BRANCH" = "main" ] && echo "prod" || echo "dev")
+        - echo "Deploying env=$DEPLOY_ENV"
+        - cd infrastructure
+        - npm ci
+    build:
+      commands:
+        # Deploy the hosting stack (S3 + CloudFront + Route53)
+        - npx cdk deploy Briefings-Hosting-$DEPLOY_ENV --require-approval never --context env=$DEPLOY_ENV
+
+        # Also deploy the CI stack when on main (idempotent)
+        - |
+          if [ "$DEPLOY_ENV" = "prod" ]; then
+            npx cdk deploy Briefings-CI --require-approval never --context env=prod
+          fi
+
+        # Resolve bucket + distribution from CloudFormation outputs
+        - export BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name Briefings-Hosting-$DEPLOY_ENV --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text --region us-east-1)
+        - export DIST_ID=$(aws cloudformation describe-stacks --stack-name Briefings-Hosting-$DEPLOY_ENV --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" --output text --region us-east-1)
+        - echo "Bucket=$BUCKET_NAME  Distribution=$DIST_ID"
+
+        # Upload index.html with short TTL
+        - aws s3 cp ../src/index.html s3://$BUCKET_NAME/index.html --content-type "text/html" --cache-control "max-age=60" --region us-east-1
+
+        # Seed manifest.json if it doesn't exist yet (empty manifest)
+        - |
+          if ! aws s3 ls s3://$BUCKET_NAME/manifest.json --region us-east-1 > /dev/null 2>&1; then
+            echo '{"briefings":[]}' | aws s3 cp - s3://$BUCKET_NAME/manifest.json --content-type "application/json" --cache-control "max-age=60" --region us-east-1
+            echo "Seeded empty manifest.json"
+          fi
+
+        # Invalidate CloudFront cache for index.html (manifest.json invalidated by briefing task)
+        - aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/index.html" --region us-east-1
+
+  artifacts:
+    # Amplify is CI-only here — no hosting artifacts to publish
+    baseDirectory: /dev/null
+    files:
+      - '**/*'

@@ -1,0 +1,24 @@
+{
+  "name": "sdn-daily-briefing-infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "deploy:prod": "cdk deploy --all --require-approval never --context env=prod",
+    "deploy:dev": "cdk deploy --all --require-approval never --context env=dev",
+    "diff:prod": "cdk diff --all --context env=prod",
+    "diff:dev": "cdk diff --all --context env=dev",
+    "synth": "cdk synth"
+  },
+  "devDependencies": {
+    "@types/node": "22.x",
+    "aws-cdk": "2.x",
+    "typescript": "~5.7"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.x",
+    "constructs": "^10.0.0"
+  }
+}
