@@ -19,9 +19,14 @@
  *    - briefings-cloudfront-5xx-{env}         CloudFront 5xx rate > 1%
  *    - briefings-scheduler-dropped-{env}      EventBridge dropped a scheduled invocation
  *
- *  Alarm Notification Pipeline:
- *    SNS Topic: briefings-alarms-{env}
- *    Lambda:    briefings-alarm-notifier-{env}  (posts to Slack on state change)
+ *  Alarm Notification Pipeline (SNS fan-out):
+ *    SNS Topic:  briefings-alarms-{env}
+ *      ↳ SQS Queue: briefings-alarm-slack-queue-{env} (+ DLQ)
+ *          ↳ Lambda: briefings-alarm-notifier-{env}  (posts to Slack #ops)
+ *      ↳ (future recipients: add another SQS queue + Lambda here)
+ *
+ *  The fan-out pattern ensures a failure in one alarm recipient (e.g. Slack down)
+ *  does not affect delivery to other recipients.
  *
  *  Custom Metrics (namespace: Briefings):
  *    Emitted by the generator Lambda on each run:
@@ -40,6 +45,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNode from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { Construct } from 'constructs';
@@ -56,15 +63,18 @@ export class BriefingsMonitoringStack extends cdk.Stack {
     const { envName, distributionId } = props;
 
     // Predictable resource names — no cross-stack references needed
-    const genFn       = `briefings-generator-${envName}`;
-    const pushoverFn  = `briefings-pushover-notifier-${envName}`;
-    const slackFn     = `briefings-slack-notifier-${envName}`;
-    const pushoverQ   = `briefings-pushover-queue-${envName}`;
-    const pushoverDlq = `briefings-pushover-dlq-${envName}`;
-    const slackQ      = `briefings-slack-queue-${envName}`;
-    const slackDlq    = `briefings-slack-dlq-${envName}`;
-    const snsName     = `briefings-generated-${envName}`;
-    const dashName    = `Briefings-${envName}`;
+    const genFn          = `briefings-generator-${envName}`;
+    const pushoverFn     = `briefings-pushover-notifier-${envName}`;
+    const slackFn        = `briefings-slack-notifier-${envName}`;
+    const alarmNotifierFn = `briefings-alarm-notifier-${envName}`;
+    const pushoverQ      = `briefings-pushover-queue-${envName}`;
+    const pushoverDlq    = `briefings-pushover-dlq-${envName}`;
+    const slackQ         = `briefings-slack-queue-${envName}`;
+    const slackDlq       = `briefings-slack-dlq-${envName}`;
+    const alarmSlackQ    = `briefings-alarm-slack-queue-${envName}`;
+    const alarmSlackDlqN = `briefings-alarm-slack-dlq-${envName}`;
+    const snsName        = `briefings-generated-${envName}`;
+    const dashName       = `Briefings-${envName}`;
 
     // -----------------------------------------------------------------------
     // Metric factories
@@ -96,23 +106,49 @@ export class BriefingsMonitoringStack extends cdk.Stack {
         dimensionsMap: { Environment: envName }, statistic: stat, period });
 
     // -----------------------------------------------------------------------
-    // Alarm notification pipeline: SNS → Lambda → Slack
+    // Alarm notification pipeline: SNS → SQS fan-out → Lambda consumers
+    //
+    // AlarmTopic is the single ingress point for all 9 CloudWatch alarms.
+    // Each downstream recipient gets its own SQS queue + DLQ + Lambda so
+    // that a failure in one channel never blocks another.
     // -----------------------------------------------------------------------
     const alarmTopic = new sns.Topic(this, 'AlarmTopic', {
       topicName: `briefings-alarms-${envName}`,
       displayName: `Briefings Alarms (${envName})`,
     });
 
+    // -----------------------------------------------------------------------
+    // Alarm fan-out subscriber #1: Slack #ops
+    // -----------------------------------------------------------------------
+    const alarmSlackDlq = new sqs.Queue(this, 'AlarmSlackDLQ', {
+      queueName: `briefings-alarm-slack-dlq-${envName}`,
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    const alarmSlackQueue = new sqs.Queue(this, 'AlarmSlackQueue', {
+      queueName: `briefings-alarm-slack-queue-${envName}`,
+      visibilityTimeout: cdk.Duration.seconds(60),
+      deadLetterQueue: {
+        queue: alarmSlackDlq,
+        maxReceiveCount: 3,
+      },
+    });
+
+    // rawMessageDelivery=true: SQS record body = CloudWatch alarm JSON directly
+    alarmTopic.addSubscription(new snsSubscriptions.SqsSubscription(alarmSlackQueue, {
+      rawMessageDelivery: true,
+    }));
+
     const alarmLambda = new lambdaNode.NodejsFunction(this, 'AlarmLambda', {
       functionName: `briefings-alarm-notifier-${envName}`,
-      description: 'Forwards CloudWatch alarm state changes to Slack',
+      description: 'Forwards CloudWatch alarm state changes to Slack #ops',
       entry: path.join(__dirname, '../../lambdas/briefing-alarms/index.ts'),
       handler: 'handler',
       runtime: lambda.Runtime.NODEJS_22_X,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       environment: {
-        SSM_SLACK_WEBHOOK_URL: '/briefings/slack-webhook-url',
+        SSM_SLACK_WEBHOOK_URL: '/briefings/slack-ops-webhook-url',
         DASHBOARD_NAME: dashName,
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
       },
@@ -125,12 +161,15 @@ export class BriefingsMonitoringStack extends cdk.Stack {
       },
     });
 
-    alarmTopic.addSubscription(new snsSubscriptions.LambdaSubscription(alarmLambda));
+    alarmLambda.addEventSource(new lambdaEventSources.SqsEventSource(alarmSlackQueue, {
+      batchSize: 1,
+      reportBatchItemFailures: true,
+    }));
 
     alarmLambda.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['ssm:GetParameter'],
-      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/briefings/slack-webhook-url`],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/briefings/slack-ops-webhook-url`],
     }));
     alarmLambda.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
@@ -423,6 +462,18 @@ export class BriefingsMonitoringStack extends cdk.Stack {
       }),
     );
 
+    dash.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'Alarm Notifier (Slack #ops) — Invocations & Errors',
+        left:  [lm(alarmNotifierFn, 'Invocations', 'Sum')],
+        right: [lm(alarmNotifierFn, 'Errors', 'Sum')],
+        leftYAxis:  { label: 'Invocations', min: 0, showUnits: false },
+        rightYAxis: { label: 'Errors',      min: 0, showUnits: false },
+        rightAnnotations: threshold1(),
+        width: 12, height: 5,
+      }),
+    );
+
     // ===================================================================
     // Section: Queue Health (DLQs most critical)
     // ===================================================================
@@ -460,6 +511,25 @@ export class BriefingsMonitoringStack extends cdk.Stack {
       new cloudwatch.GraphWidget({
         title: '🚨 Slack DLQ',
         left: [sqm(slackDlq, 'ApproximateNumberOfMessagesVisible', 'Maximum')],
+        leftAnnotations: threshold1(),
+        leftYAxis: { label: 'messages', min: 0, showUnits: false },
+        width: 6, height: 5,
+      }),
+    );
+
+    dash.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'Alarm Slack Queue Depth',
+        left: [
+          sqm(alarmSlackQ, 'ApproximateNumberOfMessagesVisible',    'Maximum'),
+          sqm(alarmSlackQ, 'ApproximateNumberOfMessagesNotVisible', 'Maximum'),
+        ],
+        leftYAxis: { label: 'messages', min: 0, showUnits: false },
+        width: 6, height: 5,
+      }),
+      new cloudwatch.GraphWidget({
+        title: '🚨 Alarm Slack DLQ',
+        left: [sqm(alarmSlackDlqN, 'ApproximateNumberOfMessagesVisible', 'Maximum')],
         leftAnnotations: threshold1(),
         leftYAxis: { label: 'messages', min: 0, showUnits: false },
         width: 6, height: 5,

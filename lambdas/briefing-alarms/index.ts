@@ -1,20 +1,24 @@
 /**
  * briefing-alarms/index.ts
  *
- * Lambda — triggered by SNS when a CloudWatch Alarm changes state.
+ * Lambda — triggered by SQS (which is subscribed to the briefings-alarms SNS topic)
+ * when a CloudWatch Alarm changes state.
  *
- * Posts a formatted Slack message to the #briefings channel:
+ * The SNS→SQS subscription uses rawMessageDelivery=true, so the SQS record body
+ * is the CloudWatch alarm notification JSON directly.
+ *
+ * Posts a formatted Block Kit message to Slack #ops:
  *   🚨 ALARM:    red alert with reason + console link
  *   ✅ RESOLVED: green confirmation
  *   ⚠️ INSUFFICIENT_DATA: yellow advisory
  */
 
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
-import type { SNSEvent } from 'aws-lambda';
+import type { SQSEvent } from 'aws-lambda';
 
 const ssm = new SSMClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 
-const SSM_WEBHOOK = process.env.SSM_SLACK_WEBHOOK_URL ?? '/briefings/slack-webhook-url';
+const SSM_WEBHOOK = process.env.SSM_SLACK_WEBHOOK_URL ?? '/briefings/slack-ops-webhook-url';
 const DASHBOARD_NAME = process.env.DASHBOARD_NAME ?? 'Briefings-prod';
 
 let cachedWebhookUrl: string | null = null;
@@ -122,15 +126,16 @@ function buildSlackPayload(alarm: AlarmNotification): object {
 // ---------------------------------------------------------------------------
 // Lambda handler
 // ---------------------------------------------------------------------------
-export async function handler(event: SNSEvent): Promise<void> {
+export async function handler(event: SQSEvent): Promise<void> {
   const webhookUrl = await getWebhookUrl();
 
   for (const record of event.Records) {
     let alarm: AlarmNotification;
     try {
-      alarm = JSON.parse(record.Sns.Message) as AlarmNotification;
+      // rawMessageDelivery=true: record.body is the CloudWatch alarm JSON directly
+      alarm = JSON.parse(record.body) as AlarmNotification;
     } catch {
-      console.error('[alarms] Failed to parse SNS message:', record.Sns.Message);
+      console.error('[alarms] Failed to parse SQS record body:', record.body);
       continue;
     }
 
