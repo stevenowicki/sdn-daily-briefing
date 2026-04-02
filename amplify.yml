@@ -6,6 +6,10 @@ frontend:
         - echo "Branch=$AWS_BRANCH"
         - export DEPLOY_ENV=$([ "$AWS_BRANCH" = "main" ] && echo "prod" || echo "dev")
         - echo "Deploying env=$DEPLOY_ENV"
+        # Install generator Lambda deps before CDK runs — esbuild bundles
+        # @anthropic-ai/sdk and fast-xml-parser directly into the Lambda zip
+        # and needs them present in the Lambda's own node_modules to resolve them.
+        - npm ci --prefix lambdas/briefing-generator
         - cd infrastructure
         - npm ci
     build:
