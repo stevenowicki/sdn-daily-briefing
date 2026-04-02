@@ -1,0 +1,7 @@
+{
+  "name": "briefing-alarm-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Alarm notifier Lambda — forwards CloudWatch alarm state changes to Slack",
+  "dependencies": {}
+}

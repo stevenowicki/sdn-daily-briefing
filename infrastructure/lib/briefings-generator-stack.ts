@@ -154,6 +154,13 @@ export class BriefingsGeneratorStack extends cdk.Stack {
     // Grant SNS publish
     briefingsTopic.grantPublish(generatorLambda);
 
+    // Grant CloudWatch PutMetricData (resource-level permissions not supported — must be *)
+    generatorLambda.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['cloudwatch:PutMetricData'],
+      resources: ['*'],
+    }));
+
     // Grant SSM GetParameter for Anthropic key (SecureString needs kms:Decrypt too)
     generatorLambda.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,

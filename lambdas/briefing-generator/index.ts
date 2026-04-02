@@ -17,6 +17,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import Anthropic from '@anthropic-ai/sdk';
 
 import { fetchAllFeeds, FeedItem } from './lib/feeds';
@@ -31,6 +32,7 @@ const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cf = new CloudFrontClient({ region: 'us-east-1' });
 const sns = new SNSClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const ssm = new SSMClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const cw = new CloudWatchClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 
 // ---------------------------------------------------------------------------
 // Config from environment
@@ -41,6 +43,7 @@ const SITE_URL = process.env.BRIEFINGS_SITE_URL ?? 'https://briefings.stevenowic
 const TOPIC_ARN = process.env.SNS_TOPIC_ARN!;
 const SSM_ANTHROPIC_KEY = process.env.SSM_ANTHROPIC_API_KEY ?? '/briefings/anthropic-api-key';
 const CLAUDE_MODEL = 'claude-opus-4-5';
+const ENV = process.env.ENV ?? 'prod';
 
 // ---------------------------------------------------------------------------
 // SSM cache (reused across warm invocations)
@@ -61,9 +64,9 @@ async function getAnthropicKey(): Promise<string> {
 // Schedule event payload (sent by EventBridge Scheduler)
 // ---------------------------------------------------------------------------
 interface ScheduleEvent {
-  briefingName: 'morning' | 'evening';
-  label: 'Morning' | 'Evening';
-  time: string;   // "08:00" or "17:30"
+  briefingName: 'morning' | 'evening' | 'late-night';
+  label: 'Morning' | 'Evening' | 'Late Night';
+  time: string;   // "08:00", "17:30", or "23:00"
   emoji: string;
 }
 
@@ -182,6 +185,36 @@ function extractSummaryFromResponse(text: string): { html: string; summary: stri
 }
 
 // ---------------------------------------------------------------------------
+// CloudWatch custom metrics
+// Namespace: Briefings  |  Dimensions: Environment, Label
+// ---------------------------------------------------------------------------
+async function emitMetrics(
+  label: string,
+  metrics: Array<{ name: string; value: number; unit: string }>,
+): Promise<void> {
+  const timestamp = new Date();
+  try {
+    await cw.send(new PutMetricDataCommand({
+      Namespace: 'Briefings',
+      MetricData: metrics.map(m => ({
+        MetricName: m.name,
+        Value: m.value,
+        Unit: m.unit,
+        Timestamp: timestamp,
+        Dimensions: [
+          { Name: 'Environment', Value: ENV },
+          { Name: 'Label', Value: label },
+        ],
+      })),
+    }));
+    console.log(`[metrics] Emitted ${metrics.map(m => m.name).join(', ')}`);
+  } catch (err) {
+    // Metric emission failure should never abort a successful briefing run
+    console.error('[metrics] Failed to emit metrics:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // S3: update manifest.json
 // ---------------------------------------------------------------------------
 interface ManifestEntry {
@@ -258,7 +291,7 @@ export async function handler(event: ScheduleEvent): Promise<void> {
   console.log('[handler] Step 1: Fetching data sources…');
   const [feeds, weather, markets, anthropicKey] = await Promise.all([
     fetchAllFeeds(),
-    fetchWeather('10010').catch(err => {
+    fetchWeather().catch(err => {
       console.error('[handler] Weather fetch failed:', err);
       return null;
     }),
@@ -286,12 +319,18 @@ export async function handler(event: ScheduleEvent): Promise<void> {
   console.log('[handler] Step 3: Calling Claude…');
   const anthropic = new Anthropic({ apiKey: anthropicKey });
 
+  const claudeStart = Date.now();
   const message = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 8192,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(promptData) }],
   });
+  const claudeDurationMs = Date.now() - claudeStart;
+
+  const inputTokens = message.usage?.input_tokens ?? 0;
+  const outputTokens = message.usage?.output_tokens ?? 0;
+  console.log(`[handler] Claude finished in ${claudeDurationMs}ms — in:${inputTokens} out:${outputTokens} tokens`);
 
   const rawResponse = message.content
     .filter(block => block.type === 'text')
@@ -300,6 +339,14 @@ export async function handler(event: ScheduleEvent): Promise<void> {
 
   const { html, summary } = extractSummaryFromResponse(rawResponse);
   console.log(`[handler] Claude response: ${html.length} chars HTML, summary: "${summary.slice(0, 80)}…"`);
+
+  // Emit Claude metrics immediately after generation
+  await emitMetrics(label, [
+    { name: 'ClaudeCallDurationMs', value: claudeDurationMs, unit: 'Milliseconds' },
+    { name: 'ClaudeInputTokens',    value: inputTokens,      unit: 'Count' },
+    { name: 'ClaudeOutputTokens',   value: outputTokens,     unit: 'Count' },
+    { name: 'BriefingHtmlBytes',    value: html.length,      unit: 'Bytes' },
+  ]);
 
   // Step 4: Upload HTML to S3
   console.log(`[handler] Step 4: Uploading HTML to s3://${BUCKET}/${s3Key}…`);
@@ -351,6 +398,11 @@ export async function handler(event: ScheduleEvent): Promise<void> {
       env: { DataType: 'String', StringValue: process.env.ENV ?? 'prod' },
     },
   }));
+
+  // Emit success metric (only reaches here if all steps completed without throwing)
+  await emitMetrics(label, [
+    { name: 'BriefingSuccess', value: 1, unit: 'Count' },
+  ]);
 
   console.log(`[handler] ✅ Done. Briefing live at ${fullUrl}`);
 }

@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import { BriefingsHostingStack } from '../lib/briefings-hosting-stack';
 import { BriefingsCiStack } from '../lib/briefings-ci-stack';
 import { BriefingsGeneratorStack } from '../lib/briefings-generator-stack';
+import { BriefingsMonitoringStack } from '../lib/briefings-monitoring-stack';
 
 const app = new cdk.App();
 
@@ -55,6 +56,23 @@ new BriefingsGeneratorStack(app, `Briefings-Generator-${envName}`, {
     ManagedBy: 'CDK',
   },
 });
+
+// ---------------------------------------------------------------------------
+// Monitoring stack: CloudWatch dashboard + alarms + alarm-notifier Lambda
+// Only deploy for prod — dev has no live schedules or meaningful traffic.
+// ---------------------------------------------------------------------------
+if (isProd) {
+  new BriefingsMonitoringStack(app, 'Briefings-Monitoring', {
+    envName,
+    distributionId: hostingStack.distributionId,
+    env,
+    tags: {
+      Project: 'Briefings',
+      Environment: envName,
+      ManagedBy: 'CDK',
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // CI stack: Amplify app + branches (only deploy the CI stack for prod so that
