@@ -70,6 +70,8 @@ interface ScheduleEvent {
   label: 'Morning' | 'Evening' | 'Late Night' | 'Breaking';
   time: string;   // "08:00", "17:30", "23:00", or current time for breaking
   emoji: string;
+  /** Optional ISO date override "YYYY-MM-DD" — for re-running a past briefing date */
+  dateOverride?: string;
 }
 
 /** Sent by the EventBridge cron rule every 30 minutes to check for breaking news */
@@ -394,8 +396,16 @@ export async function handler(event: LambdaEvent): Promise<void> {
 
 async function generateBriefing(event: ScheduleEvent): Promise<void> {
 
-  const { label, time, emoji } = event;
-  const { isoDate, displayDate, year, month, day } = getEasternDate();
+  const { label, time, emoji, dateOverride } = event;
+  const { isoDate, displayDate, year, month, day } = dateOverride
+    ? (() => {
+        const [y, m, d] = dateOverride.split('-');
+        const display = new Date(`${dateOverride}T12:00:00Z`).toLocaleDateString('en-US', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+        });
+        return { isoDate: dateOverride, displayDate: display, year: y, month: m, day: d };
+      })()
+    : getEasternDate();
 
   // S3 key: /2026/04/01-0800.html
   const cleanTime = time.replace(':', '');   // "0800" or "1730"

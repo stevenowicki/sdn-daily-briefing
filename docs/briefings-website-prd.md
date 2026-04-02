@@ -268,6 +268,56 @@ Let's add an arts section to the sections we already have in the briefing. This 
 
 Ideas and explorations deferred from active development. Not prioritized or scheduled.
 
+### Story arc tracking
+
+**Context:** When a story has been covered across 2+ consecutive briefings, the current system treats each briefing independently. Claude has no memory of what was covered yesterday.
+
+**What to build:** A simple S3 state file (or DynamoDB row, once that migration happens) keyed by story hash that tracks how many briefings have mentioned a story and what was said. The generator Lambda reads it at briefing time and injects "Day 3 of coverage" framing and a 1-sentence arc summary into the prompt.
+
+**Trigger:** Implement when DynamoDB migration happens (natural fit for same table).
+
+### Weekly synthesis
+
+**Context:** Sunday evening briefings could include a "Week in Review" section summarizing the week's most significant threads — useful for catching up after a busy week or providing longer-term context.
+
+**What to build:** On Sunday evenings, the prompt receives the last 7 days of manifest entries (summaries only — already available in manifest.json) and is instructed to synthesize a "Week in Review" section with 3–5 threads and their arc.
+
+**Implementation note:** The generator Lambda already has access to manifest.json at runtime. No new infrastructure needed — just a conditional section in the prompt when `label === 'Evening'` on Sundays.
+
+### Audio edition (Amazon Polly)
+
+**Context:** A "Listen" button on the briefing page that plays a ~2-minute audio summary would be useful for morning commutes.
+
+**What to build:** After generating the briefing HTML, invoke Amazon Polly on the 2–3 sentence summary and any "What to Watch" items. Upload the MP3 to S3 at the same path as the HTML but with `.mp3` extension. Add a `<audio>` player or link to the briefing page template.
+
+**Polly voice:** `Matthew` (US English, standard) or `Stephen` (neural, higher quality at higher cost). Neural voices cost ~4× more but are noticeably better.
+
+### Market sparklines
+
+**Context:** The markets section shows point-in-time data. A 5-day trend would add significant context — knowing the S&P is down today is less useful than knowing it's been down 4 of the last 5 days.
+
+**What to build:** At briefing time, fetch 5 days of daily close prices from Yahoo Finance (already used for current prices). Generate an inline SVG sparkline and embed it in the HTML_TEMPLATE. No external image hosting needed.
+
+### NYC civic action layer
+
+**Context:** Steve lives in StuyTown and is interested in local governance. City Council votes, community board meetings, and permit applications are public but hard to track.
+
+**What to build:** A new `civic` feed category that scrapes/fetches NYC OpenData, the City Council Legistar feed, and Manhattan Community Board 6 agendas. Include a "Civic Calendar" section in morning briefings listing upcoming votes or hearings relevant to the East Side/Lower Manhattan area.
+
+### Historical "This Day"
+
+**Context:** A brief "On this date in history" item connects the current news to the longer arc of events. Distinct from per-story historical parallels — this is a standalone section.
+
+**What to build:** Pass today's date to Claude and instruct it to recall one verified historical event from this date that connects meaningfully to a current story. Apply the same specificity and verification rules as per-story parallels. Omit if no genuine connection exists.
+
+**Risk:** Same hallucination risk as per-story parallels. Must require a Google verify link and "AI Analysis" label.
+
+### Slow Read
+
+**Context:** Each briefing is optimized for speed. A "Slow Read" recommendation — one long-form piece worth bookmarking — would complement the quick-scan format.
+
+**What to build:** Claude selects one piece from the RSS feeds (or a curated list of long-form sources: The Atlantic, The New Yorker, ProPublica, The Guardian Long Read) that warrants careful reading. One sentence on why it's worth the time. Shown at the bottom of the briefing, above the kicker.
+
 ### Affordable SSE for real-time updates
 
 **Context:** The homepage currently polls `manifest.json` every 60 seconds using a conditional GET (`If-None-Match`). CloudFront returns `304 Not Modified` from cache for 99.9% of polls — essentially free. New briefings appear within 60 seconds of publication, which is imperceptible for a 3×/day schedule.

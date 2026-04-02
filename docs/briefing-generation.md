@@ -8,13 +8,14 @@ To change briefing content or tone: edit `lambdas/briefing-generator/lib/prompt.
 
 ## Schedule
 
-Three briefings per day. All times America/New_York. Defined in `infrastructure/config/briefing-schedules.ts`.
+Four briefing types. Scheduled ones run at fixed times (America/New_York); Breaking is triggered by source-count threshold. Defined in `infrastructure/config/briefing-schedules.ts`.
 
 | Briefing | Emoji | Schedule | S3 path |
 |---|---|---|---|
 | Morning ☀️ | ☀️ | 8:00am ET | `/YYYY/MM/DD-0800.html` |
 | Evening 🌆 | 🌆 | 5:30pm ET | `/YYYY/MM/DD-1730.html` |
 | Late Night 🌙 | 🌙 | 11:00pm ET | `/YYYY/MM/DD-2300.html` |
+| Breaking 🚨 | 🚨 | Triggered: 7+ sources, same story, not within 90 min of scheduled run | `/YYYY/MM/DD-HHMM.html` |
 
 Each briefing is a self-contained HTML page. Claude claude-opus-4-5 generates the full HTML from live data (RSS feeds + weather + markets).
 
@@ -44,11 +45,127 @@ Steve lives in **StuyTown / Peter Cooper Village**, Manhattan, NYC (coordinates:
 
 ---
 
+## Story Prominence
+
+Feed items arrive sorted by `sourceCount` descending — the number of independent sources covering the same story. Claude uses this signal to calibrate treatment:
+
+| Source count | Treatment |
+|---|---|
+| 5+ sources | **Dominant story** — 4–6 sentence expanded treatment; may trigger Situation Room (6+) or Breaking (7+) |
+| 3–4 sources | **Major story** — 2–3 sentences |
+| 1–2 sources | **Standard story** — 1–2 sentences |
+
+The source list is provided in brackets before each story: `[7 sources: CNN, NPR, NYT, BBC, PBS, ABC, WaPo]`. Claude should not fabricate source counts or treat all stories as equal weight.
+
+---
+
+## Two-Layer Story Structure
+
+Every story in the news sections uses a two-layer format:
+
+```html
+<div class="story">
+  <p><strong>Headline</strong> — Summary text visible by default.</p>
+  <button class="story-expand" aria-expanded="false">More ▾</button>
+  <div class="story-detail" hidden>
+    <div class="story-detail-body">
+      <p>Deeper context, background, and analysis...</p>
+
+      <!-- Optional: historical parallel (only when specific and verified) -->
+      <div class="story-analysis-block">
+        <span class="story-analysis-label">AI Analysis</span>
+        <p class="story-analysis-text">Historical parallel prose...</p>
+        <a class="story-analysis-verify" href="https://www.google.com/search?q=...">Verify →</a>
+      </div>
+
+      <!-- Optional: source framing variance (only when 4+ sources show meaningful divergence) -->
+      <div class="story-analysis-block">
+        <span class="story-analysis-label">Source Framing</span>
+        <p class="story-analysis-text">How coverage differs across outlets...</p>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+The `.story-expand` button toggles `.story-detail` open/closed via JS. The `hidden` attribute is the default closed state.
+
+---
+
+## Historical Parallels
+
+When generating a historical parallel, Claude must follow strict rules to avoid hallucination:
+
+- **Specific, not vague.** Name the exact event, year, and key actors. "Like Truman's 1948 Berlin Airlift" not "Like previous Cold War crises."
+- **Post-1945 only.** Reduces hallucination risk from less-documented eras.
+- **Grounded in source articles.** The stakes analysis must connect to what the source articles actually say — no extrapolation.
+- **Labeled as AI Analysis.** Always uses the `story-analysis-label` + `story-analysis-verify` HTML structure above.
+- **Omit if uncertain.** If the parallel isn't specific and verifiable, leave it out entirely. Never include a vague one to fill space.
+
+---
+
+## Source Framing Variance
+
+When 4+ sources cover a story and show meaningful divergence in framing, Claude notes it inline using the `story-analysis-block` structure with label "Source Framing". Examples of meaningful divergence:
+
+- Significant differences in headline framing (e.g., "Ceasefire reached" vs. "Temporary pause in fighting")
+- One outlet emphasizes civilian casualties while others focus on strategic dimensions
+- Clear left/right editorial split in coverage
+
+Omit if coverage is uniform or differences are trivial.
+
+---
+
+## Situation Room Mode
+
+When the top story in `feeds.top` has `sourceCount >= 6`, the generator sets `situationRoom = true` and injects a Situation Room card above the regular Top News section. The card contains:
+
+```html
+<div class="situation-room">
+  <div class="situation-room-header">🚨 SITUATION ROOM — [headline]</div>
+  <div class="situation-room-grid">
+    <div>
+      <strong>What We Know</strong>
+      <ul>...</ul>
+    </div>
+    <div>
+      <strong>What We Don't Know</strong>
+      <ul>...</ul>
+    </div>
+  </div>
+</div>
+```
+
+This card is driven by the `situationRoom`, `dominantStoryHeadline`, and `dominantSourceCount` fields passed to `buildUserPrompt()`.
+
+---
+
+## What to Watch
+
+A conditional section included only when there are meaningful forward-looking developments to track. Contains 3–5 items in the format:
+
+```html
+<div class="watch-item">
+  <span class="watch-when">Watch for: [specific trigger/event]</span>
+  <span class="watch-what">[why it matters, what happens if it occurs]</span>
+</div>
+```
+
+Examples of good "Watch for" items:
+- Congressional vote scheduled for Thursday
+- Federal Reserve decision expected at 2pm
+- Court ruling expected this week in [specific case]
+- Ceasefire deadline expires Friday
+
+Omit the section if there's nothing genuinely forward-looking to watch (don't pad with vague items like "watch for developments").
+
+---
+
 ## Sections
 
 ### 1. Header
-- Title: "Steve's [Morning | Evening | Late Night] Briefing"
-- Emoji: ☀️ for Morning, 🌆 for Evening, 🌙 for Late Night
+- Title: "Steve's [Morning | Evening | Late Night | Breaking] Briefing"
+- Emoji: ☀️ / 🌆 / 🌙 / 🚨
 - Date: full date string, e.g. "Tuesday, April 1, 2026"
 - Navigation back to homepage: 📰 ← All Briefings (links to https://briefings.stevenowicki.com)
 
@@ -67,7 +184,10 @@ Include:
 
 Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not "There may be precipitation."
 
-### 3. Top News Headlines
+### 3. Situation Room *(conditional — only when top story has 6+ sources)*
+See [Situation Room Mode](#situation-room-mode) above.
+
+### 4. Top News Headlines
 **Sources:** CNN, NPR, NYT, BBC World, PBS NewsHour, ABC News, CBS News, Washington Post (World + National)
 
 **Selection:** 4–6 stories. Major stories of global significance:
@@ -80,7 +200,7 @@ Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not 
 
 **Skip:** pure celebrity gossip, minor local crime, routine sports scores.
 
-### 4. US News
+### 5. US News
 **Sources:** Same as Top News (different angle — domestic focus)
 
 **Selection:** 3–5 stories NOT already covered in Top News:
@@ -90,7 +210,7 @@ Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not 
 - Major state-level news with national implications
 - Immigration, healthcare, infrastructure policy
 
-### 5. NYC News
+### 6. NYC News
 **Sources:** Gothamist, The City, NYT NY Region, NBC New York, NY Post, Brooklyn Paper
 
 **Selection:** 4–6 stories most relevant to someone living in StuyTown:
@@ -104,7 +224,7 @@ Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not 
 
 **Prioritize:** The City and Gothamist for investigative/original reporting; NBC/Post for breaking news.
 
-### 6. Feel-Good News
+### 7. Feel-Good News
 **Sources:** Drawn from all feeds above; Claude selects the most uplifting
 
 **Selection:** 2–3 genuinely uplifting stories:
@@ -116,7 +236,7 @@ Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not 
 
 **Skip:** trivial ("puppy rescued"), manufactured feel-good, pure fluff.
 
-### 7. Arts *(conditional — OMIT if nothing meets the bar)*
+### 8. Arts *(conditional — OMIT if nothing meets the bar)*
 **Sources:** BroadwayWorld, NYT Arts, NYT Theater, TheaterMania, ArtsJournal, Hyperallergic, Slippedisc, Variety Legit, Hollywood Reporter, Deadline
 
 **Include:**
@@ -136,7 +256,10 @@ Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not 
 
 **Threshold:** If you can't find at least 1 item that's genuinely worth Steve's attention, **omit the Arts section entirely.** Do not pad it.
 
-### 8. Markets
+### 9. What to Watch *(conditional — OMIT if nothing genuine to watch for)*
+See [What to Watch](#what-to-watch) above.
+
+### 10. Markets
 **Sources:** Yahoo Finance (unofficial API, no key required)
 
 **Always include:**
@@ -149,7 +272,7 @@ Tone: practical and specific. "Light rain after 2pm; umbrella worth having" not 
 
 **Context:** Add 1-2 sentences of context for each significant market move. Why did the S&P fall? What's driving oil? Connect to the news stories above when relevant.
 
-### 9. Footer / Kicker
+### 11. Footer / Kicker
 A single closing line. Rules:
 - Warm but not saccharine
 - Matches the emotional register of the day's news (understated if heavy news)
@@ -214,6 +337,10 @@ After each successful briefing, the generator Lambda publishes to SNS topic `bri
 
 Both subscribers use `rawMessageDelivery: true` — the SQS message body is the SNS payload directly.
 
+**Breaking news special handling:**
+- **Pushover:** Emergency priority (2) — bypasses Do Not Disturb, plays siren, requires acknowledgment. Retry every 60s, expires after 1 hour.
+- **Slack:** Red accent color (`#dc2626`), `<!channel>` mention, bold summary.
+
 ### Adding a new subscriber
 
 1. Add a new SQS queue + DLQ in `BriefingsGeneratorStack`
@@ -238,4 +365,6 @@ Both subscribers use `rawMessageDelivery: true` — the SQS message body is the 
 }
 ```
 
-Valid `label` values: `"Morning"` | `"Evening"` | `"Late Night"`
+Valid `label` values: `"Morning"` | `"Evening"` | `"Late Night"` | `"Breaking"`
+
+The SNS message also carries a `breaking` MessageAttribute (`"true"` | `"false"`) for filter policy use by future subscribers.
