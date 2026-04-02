@@ -17,6 +17,15 @@ frontend:
         # Deploy the hosting stack (S3 + CloudFront + Route53)
         - npx cdk deploy Briefings-Hosting-$DEPLOY_ENV --require-approval never --context env=$DEPLOY_ENV
 
+        # Deploy the generator stack (Lambda + EventBridge schedules + SNS/SQS fan-out)
+        - npx cdk deploy Briefings-Generator-$DEPLOY_ENV --require-approval never --context env=$DEPLOY_ENV
+
+        # Deploy the monitoring stack (only exists for prod)
+        - |
+          if [ "$DEPLOY_ENV" = "prod" ]; then
+            npx cdk deploy Briefings-Monitoring --require-approval never --context env=prod
+          fi
+
         # Also deploy the CI stack when on main (idempotent)
         - |
           if [ "$DEPLOY_ENV" = "prod" ]; then
@@ -41,13 +50,9 @@ frontend:
         # Invalidate CloudFront cache for index.html (manifest.json invalidated by briefing task)
         - aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/index.html" --region us-east-1
 
-        # Amplify requires a valid artifact directory even when we're CI-only.
-        # /dev/null is a device node, not a directory — it causes a CustomerError.
-        # Create an empty dir so the artifact step has something to collect.
-        - mkdir -p /tmp/amplify-artifacts
-
   artifacts:
-    # Amplify is CI-only here — no hosting artifacts to publish (empty dir)
-    baseDirectory: /tmp/amplify-artifacts
+    # Amplify is CI-only — no hosting artifacts. The .amplify-artifacts dir is a
+    # committed empty directory; Amplify requires a real (non-/dev/null) path here.
+    baseDirectory: .amplify-artifacts
     files:
       - '**/*'
