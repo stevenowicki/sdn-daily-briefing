@@ -181,6 +181,24 @@ export async function fetchAllFeeds(): Promise<AllFeedItems> {
 }
 
 /**
+ * Lightweight feed fetch for the breaking-news checker.
+ * Fetches only the top/world category feeds (skips NYC and arts)
+ * so the 30-minute cron check completes quickly.
+ */
+export async function fetchTopFeedsForBreakingCheck(): Promise<FeedItem[]> {
+  const topFeeds = FEED_GROUPS.filter(f => f.category === 'top');
+  const results = await Promise.allSettled(topFeeds.map(feed => fetchOneFeed(feed)));
+  const items: FeedItem[] = [];
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') {
+      console.log(`[feeds/breaking] ${topFeeds[i].name}: ${result.value.length} items`);
+      items.push(...result.value);
+    }
+  });
+  return deduplicateWithCounts(items);
+}
+
+/**
  * Deduplicate near-duplicate headlines (same first 60 chars) and annotate
  * each surviving item with how many distinct sources covered the story.
  * Results are sorted by source count descending so Claude sees the most

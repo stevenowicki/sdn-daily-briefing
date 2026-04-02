@@ -16,11 +16,11 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
-import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import Anthropic from '@anthropic-ai/sdk';
 
-import { fetchAllFeeds, FeedItem } from './lib/feeds';
+import { fetchAllFeeds, fetchTopFeedsForBreakingCheck, FeedItem } from './lib/feeds';
 import { fetchWeather } from './lib/weather';
 import { fetchMarketData, formatChangePercent, formatPrice } from './lib/markets';
 import { SYSTEM_PROMPT, buildUserPrompt } from './lib/prompt';
@@ -61,13 +61,67 @@ async function getAnthropicKey(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Schedule event payload (sent by EventBridge Scheduler)
+// Event payloads
 // ---------------------------------------------------------------------------
+
+/** Sent by EventBridge Scheduler for each scheduled briefing, or manually */
 interface ScheduleEvent {
-  briefingName: 'morning' | 'evening' | 'late-night';
-  label: 'Morning' | 'Evening' | 'Late Night';
-  time: string;   // "08:00", "17:30", or "23:00"
+  briefingName: 'morning' | 'evening' | 'late-night' | 'breaking';
+  label: 'Morning' | 'Evening' | 'Late Night' | 'Breaking';
+  time: string;   // "08:00", "17:30", "23:00", or current time for breaking
   emoji: string;
+}
+
+/** Sent by the EventBridge cron rule every 30 minutes to check for breaking news */
+interface CheckBreakingEvent {
+  action: 'check-breaking';
+}
+
+type LambdaEvent = ScheduleEvent | CheckBreakingEvent;
+
+// ---------------------------------------------------------------------------
+// Breaking news state (persisted in SSM between invocations)
+// ---------------------------------------------------------------------------
+const SSM_BREAKING_STATE    = '/briefings/breaking-state';
+const BREAKING_THRESHOLD    = 7;   // sources required to trigger
+const BREAKING_COOLDOWN_H   = 4;   // hours before same story can re-trigger
+
+interface BreakingState {
+  lastStoryHash: string;
+  lastTriggeredAt: string;
+}
+
+function breakingStoryHash(title: string): string {
+  return title.toLowerCase().slice(0, 80).replace(/\s+/g, ' ').trim();
+}
+
+/** Returns true when the current ET clock is within 90 min of a scheduled briefing */
+function isNearScheduledBriefing(): boolean {
+  const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et = new Date(etStr);
+  const totalMin = et.getHours() * 60 + et.getMinutes();
+  // Windows: 6:30–8:00 (morning), 16:00–17:30 (evening), 21:30–23:00 (late night)
+  return (totalMin >= 390 && totalMin < 480)
+      || (totalMin >= 960 && totalMin < 1050)
+      || (totalMin >= 1290 && totalMin < 1380);
+}
+
+async function getBreakingState(): Promise<BreakingState | null> {
+  try {
+    const res = await ssm.send(new GetParameterCommand({ Name: SSM_BREAKING_STATE }));
+    return JSON.parse(res.Parameter?.Value ?? 'null') as BreakingState | null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveBreakingState(state: BreakingState): Promise<void> {
+  await ssm.send(new PutParameterCommand({
+    Name: SSM_BREAKING_STATE,
+    Value: JSON.stringify(state),
+    Type: 'String',
+    Overwrite: true,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -281,10 +335,62 @@ async function invalidateCloudFront(distId: string, paths: string[]): Promise<vo
 }
 
 // ---------------------------------------------------------------------------
-// Main Lambda handler
+// Breaking news checker — invoked every 30 min via EventBridge cron
 // ---------------------------------------------------------------------------
-export async function handler(event: ScheduleEvent): Promise<void> {
+async function checkBreaking(): Promise<void> {
+  console.log('[breaking] Running breaking news check…');
+
+  if (isNearScheduledBriefing()) {
+    console.log('[breaking] Within 90 min of a scheduled briefing — skipping');
+    return;
+  }
+
+  const topItems = await fetchTopFeedsForBreakingCheck();
+  if (!topItems.length) { console.log('[breaking] No feed items'); return; }
+
+  const dominant = topItems[0];
+  const count = dominant.sourceCount ?? 0;
+  console.log(`[breaking] Top story: "${dominant.title}" — ${count} sources`);
+
+  if (count < BREAKING_THRESHOLD) {
+    console.log(`[breaking] ${count} sources < threshold ${BREAKING_THRESHOLD} — no breaking news`);
+    return;
+  }
+
+  const hash = breakingStoryHash(dominant.title);
+  const state = await getBreakingState();
+  if (state) {
+    const hoursAgo = (Date.now() - new Date(state.lastTriggeredAt).getTime()) / 3_600_000;
+    if (state.lastStoryHash === hash && hoursAgo < BREAKING_COOLDOWN_H) {
+      console.log(`[breaking] Same story alerted ${hoursAgo.toFixed(1)}h ago — skipping`);
+      return;
+    }
+  }
+
+  // Threshold met and not in cooldown — generate a breaking briefing
+  const now = new Date();
+  const etTime = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(now);  // "14:35"
+
+  console.log(`[breaking] 🚨 Triggering breaking briefing at ${etTime} ET`);
+  await generateBriefing({ briefingName: 'breaking', label: 'Breaking', time: etTime, emoji: '🚨' });
+  await saveBreakingState({ lastStoryHash: hash, lastTriggeredAt: now.toISOString() });
+  console.log('[breaking] ✅ Breaking briefing complete, state saved');
+}
+
+// ---------------------------------------------------------------------------
+// Main Lambda handler — dispatches on event type
+// ---------------------------------------------------------------------------
+export async function handler(event: LambdaEvent): Promise<void> {
   console.log('[handler] Event:', JSON.stringify(event));
+  if ('action' in event && event.action === 'check-breaking') {
+    return checkBreaking();
+  }
+  return generateBriefing(event);
+}
+
+async function generateBriefing(event: ScheduleEvent): Promise<void> {
 
   const { label, time, emoji } = event;
   const { isoDate, displayDate, year, month, day } = getEasternDate();
@@ -314,6 +420,14 @@ export async function handler(event: ScheduleEvent): Promise<void> {
   const weatherStr = weather ? formatWeatherForPrompt(weather) : 'Weather data unavailable.';
   const marketsStr = formatMarketsForPrompt(markets);
 
+  // Situation Room: top story covered by 6+ independent sources
+  const SITUATION_ROOM_THRESHOLD = 6;
+  const dominantStory = feeds.top[0];
+  const situationRoom = (dominantStory?.sourceCount ?? 0) >= SITUATION_ROOM_THRESHOLD;
+  if (situationRoom) {
+    console.log(`[handler] 🚨 Situation Room triggered — "${dominantStory.title}" (${dominantStory.sourceCount} sources)`);
+  }
+
   const promptData = {
     label,
     emoji,
@@ -323,6 +437,9 @@ export async function handler(event: ScheduleEvent): Promise<void> {
     topItems: formatFeedItems(feeds.top),
     nycItems: formatFeedItems(feeds.nyc),
     artsItems: formatFeedItems(feeds.arts),
+    situationRoom,
+    dominantStoryHeadline: situationRoom ? dominantStory.title : undefined,
+    dominantSourceCount:   situationRoom ? dominantStory.sourceCount : undefined,
   };
 
   // Step 3: Call Claude
@@ -404,8 +521,9 @@ export async function handler(event: ScheduleEvent): Promise<void> {
     Subject: `${emoji} ${label} Briefing — ${displayDate}`,
     Message: JSON.stringify(snsPayload),
     MessageAttributes: {
-      label: { DataType: 'String', StringValue: label },
-      env: { DataType: 'String', StringValue: process.env.ENV ?? 'prod' },
+      label:    { DataType: 'String', StringValue: label },
+      env:      { DataType: 'String', StringValue: process.env.ENV ?? 'prod' },
+      breaking: { DataType: 'String', StringValue: label === 'Breaking' ? 'true' : 'false' },
     },
   }));
 

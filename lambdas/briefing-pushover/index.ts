@@ -53,19 +53,27 @@ async function sendPushoverNotification(event: BriefingEvent): Promise<void> {
     month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
   });
 
-  const title     = `${event.emoji} ${event.label} Briefing — ${displayDate}`;
-  const urlTitle  = `Open ${event.label} Briefing`;
+  const isBreaking = event.label === 'Breaking';
+  const title    = isBreaking
+    ? `🚨 Breaking News Alert — ${displayDate}`
+    : `${event.emoji} ${event.label} Briefing — ${displayDate}`;
+  const urlTitle = isBreaking ? 'Read Breaking Briefing' : `Open ${event.label} Briefing`;
 
-  const body = new URLSearchParams({
+  const params: Record<string, string> = {
     token,
-    user:       userKey,
+    user:      userKey,
     title,
-    message:    event.summary || `${event.label} briefing is ready.`,
-    url:        event.fullUrl,
-    url_title:  urlTitle,
-    priority:   '0',      // Normal priority
-    sound:      'none',
-  });
+    message:   event.summary || `${event.label} briefing is ready.`,
+    url:       event.fullUrl,
+    url_title: urlTitle,
+    // Breaking: emergency priority (bypasses Do Not Disturb, requires acknowledgment)
+    // Normal: priority 0 (no sound, no interruption)
+    priority:  isBreaking ? '2' : '0',
+    sound:     isBreaking ? 'siren' : 'none',
+    ...(isBreaking ? { retry: '60', expire: '3600' } : {}),
+  };
+
+  const body = new URLSearchParams(params);
 
   const res = await fetch('https://api.pushover.net/1/messages.json', {
     method: 'POST',

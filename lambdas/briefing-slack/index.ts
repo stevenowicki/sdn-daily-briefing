@@ -36,7 +36,7 @@ async function getWebhookUrl(): Promise<string> {
 // ---------------------------------------------------------------------------
 interface BriefingEvent {
   emoji: string;
-  label: 'Morning' | 'Evening' | 'Late Night';
+  label: 'Morning' | 'Evening' | 'Late Night' | 'Breaking';
   date: string;        // "2026-04-01"
   fullUrl: string;     // "https://briefings.stevenowicki.com/2026/04/01-0800.html"
   summary: string;
@@ -46,6 +46,32 @@ function buildSlackPayload(event: BriefingEvent): object {
   const displayDate = new Date(event.date + 'T12:00:00Z').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
   });
+
+  if (event.label === 'Breaking') {
+    // Red-accented breaking news format
+    return {
+      text: '🚨 Breaking News Alert',  // fallback for notifications
+      attachments: [
+        {
+          color: '#dc2626',
+          blocks: [
+            {
+              type: 'header',
+              text: { type: 'plain_text', text: `🚨 Breaking News — ${displayDate}`, emoji: true },
+            },
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: `<!channel> *${event.summary || 'A breaking news briefing has been published.'}*` },
+            },
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: `<${event.fullUrl}|Read Breaking Briefing →>` },
+            },
+          ],
+        },
+      ],
+    };
+  }
 
   const headerText = `${event.emoji} ${event.label} Briefing — ${displayDate}`;
   const summaryText = `<!channel> ${event.summary || `Your ${event.label.toLowerCase()} briefing is ready.`}`;

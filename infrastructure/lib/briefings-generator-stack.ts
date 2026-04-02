@@ -52,6 +52,8 @@ import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { BRIEFING_SCHEDULES } from '../config/briefing-schedules';
@@ -173,6 +175,15 @@ export class BriefingsGeneratorStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: ['kms:Decrypt'],
       resources: ['arn:aws:kms:*:*:alias/aws/ssm'],
+    }));
+
+    // Breaking news state — get + put (mutable runtime state, plain String not SecureString)
+    generatorLambda.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['ssm:GetParameter', 'ssm:PutParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/briefings/breaking-state`,
+      ],
     }));
 
     // -----------------------------------------------------------------------
@@ -334,6 +345,27 @@ export class BriefingsGeneratorStack extends cdk.Stack {
           },
         },
       });
+    }
+
+    // -----------------------------------------------------------------------
+    // Breaking news checker — EventBridge cron every 30 min (prod only)
+    //
+    // Sends {"action":"check-breaking"} to the generator Lambda.
+    // The Lambda fetches top feeds, checks source count threshold (7+),
+    // and generates a Breaking briefing if conditions are met.
+    // Skips within 90 min of any scheduled briefing to avoid overlap.
+    // -----------------------------------------------------------------------
+    if (enableSchedules) {
+      const breakingCheckerRule = new events.Rule(this, 'BreakingCheckerRule', {
+        ruleName: `briefings-breaking-checker-${envName}`,
+        description: 'Checks for breaking news every 30 minutes',
+        schedule: events.Schedule.rate(cdk.Duration.minutes(30)),
+      });
+
+      breakingCheckerRule.addTarget(new eventsTargets.LambdaFunction(generatorLambda, {
+        event: events.RuleTargetInput.fromObject({ action: 'check-breaking' }),
+        retryAttempts: 0,  // Don't retry — next check is in 30 min anyway
+      }));
     }
 
     // -----------------------------------------------------------------------
