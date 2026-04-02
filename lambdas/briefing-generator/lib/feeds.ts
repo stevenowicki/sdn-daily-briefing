@@ -45,6 +45,7 @@ export const FEED_GROUPS: FeedGroup[] = [
   { category: 'nyc', name: 'NY Post',            url: 'https://nypost.com/feed/' },
   { category: 'nyc', name: 'NYT NY Region',      url: 'https://rss.nytimes.com/services/xml/rss/nyt/NYRegion.xml' },
   { category: 'nyc', name: 'Brooklyn Paper',     url: 'https://www.brooklynpaper.com/feed/' },
+  { category: 'nyc', name: 'NY1',                url: 'https://ny1.com/services/contentfeed.nyc%7call-boroughs%7cnews.landing.rss' },
 
   // Arts — NYC and nationally significant
   { category: 'arts', name: 'BroadwayWorld',     url: 'https://www.broadwayworld.com/rss.cfm' },
