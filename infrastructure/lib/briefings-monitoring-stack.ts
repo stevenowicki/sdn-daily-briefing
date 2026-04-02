@@ -47,6 +47,8 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { Construct } from 'constructs';
@@ -598,6 +600,89 @@ export class BriefingsMonitoringStack extends cdk.Stack {
         width: 8, height: 5,
       }),
     );
+
+    // -----------------------------------------------------------------------
+    // Deployment notifier: EventBridge → Lambda → Slack #ops
+    //
+    // Two rules on the default bus (events are emitted there automatically):
+    //   1. Amplify build completions (SUCCEED / FAILED) for the Briefings app
+    //   2. CloudFormation terminal state changes for Briefings-* stacks
+    //
+    // EventBridge has built-in retry (185 attempts over 24h) and supports its
+    // own DLQ, so we connect directly to Lambda rather than via SQS.
+    // -----------------------------------------------------------------------
+    const deployLambda = new lambdaNode.NodejsFunction(this, 'DeployLambda', {
+      functionName: `briefings-deploy-notifier-${envName}`,
+      description: 'Posts Amplify and CloudFormation deployment events to Slack #ops',
+      entry: path.join(__dirname, '../../lambdas/briefing-deploy-notifier/index.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        SSM_SLACK_WEBHOOK_URL: '/briefings/slack-ops-webhook-url',
+        AMPLIFY_APP_ID: 'd1tikygvw88dgp',
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: false,
+        sourceMap: true,
+        target: 'node22',
+        format: lambdaNode.OutputFormat.CJS,
+      },
+    });
+
+    deployLambda.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['ssm:GetParameter'],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/briefings/slack-ops-webhook-url`],
+    }));
+    deployLambda.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['kms:Decrypt'],
+      resources: ['arn:aws:kms:*:*:alias/aws/ssm'],
+    }));
+
+    // Rule 1: Amplify build completions (SUCCEED or FAILED) for the Briefings app
+    new events.Rule(this, 'AmplifyDeployRule', {
+      ruleName: `briefings-amplify-deploy-${envName}`,
+      description: 'Notifies #ops when an Amplify build completes for the Briefings app',
+      eventBus: events.EventBus.fromEventBusName(this, 'DefaultBus', 'default'),
+      eventPattern: {
+        source: ['aws.amplify'],
+        detailType: ['Amplify Deployment Status Change'],
+        detail: {
+          appId: ['d1tikygvw88dgp'],
+          jobStatus: ['SUCCEED', 'FAILED'],
+        },
+      },
+      targets: [new eventsTargets.LambdaFunction(deployLambda)],
+    });
+
+    // Rule 2: CloudFormation terminal states for Briefings-* stacks
+    new events.Rule(this, 'CfnDeployRule', {
+      ruleName: `briefings-cfn-deploy-${envName}`,
+      description: 'Notifies #ops when a Briefings CloudFormation stack reaches a terminal state',
+      eventBus: events.EventBus.fromEventBusName(this, 'DefaultBus2', 'default'),
+      eventPattern: {
+        source: ['aws.cloudformation'],
+        detailType: ['CloudFormation Stack Status Change'],
+        detail: {
+          'stack-id': [{ prefix: `arn:aws:cloudformation:us-east-1:${this.account}:stack/Briefings-` }],
+          'status-details': {
+            status: [
+              'CREATE_COMPLETE',
+              'UPDATE_COMPLETE',
+              'UPDATE_ROLLBACK_COMPLETE',
+              'ROLLBACK_COMPLETE',
+              'CREATE_FAILED',
+            ],
+          },
+        },
+      },
+      targets: [new eventsTargets.LambdaFunction(deployLambda)],
+    });
 
     // -----------------------------------------------------------------------
     // Outputs
