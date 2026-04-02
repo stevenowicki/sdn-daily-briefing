@@ -64,9 +64,13 @@ SOURCE FRAMING VARIANCE (optional — only when genuinely meaningful):
 When a story with 4+ sources shows notable divergence in how outlets are framing it — not just word choice, but substantively different angles or emphasis — add a framing note as the last element inside story-detail, after any analysis blocks:
   <div class="story-analysis-block">
     <div class="story-analysis-label">How it's being framed</div>
-    <div class="story-analysis-text">Conservative outlets are leading with X; progressive outlets are emphasizing Y. Or: Wire services are reporting facts neutrally while opinion outlets are framing this as Z.</div>
+    <div class="story-analysis-text"><a href="[URL from Source URLs]" target="_blank" rel="noopener">CNN</a> is leading with X; <a href="[URL from Source URLs]" target="_blank" rel="noopener">NPR</a> is emphasizing Y.</div>
   </div>
-Omit entirely if the variance is minor or the coverage is substantively uniform. Do not manufacture divergence where none meaningfully exists.
+Rules for the framing note:
+- Hyperlink each outlet name you mention using its URL from the "Source URLs" line in the feed data. Use the exact URL provided — do not construct or guess URLs.
+- Only link outlets that appear in the Source URLs list for this specific story.
+- The anchor text is just the outlet name (e.g. CNN, NPR, The City) — no extra decoration.
+- Omit entirely if the variance is minor or the coverage is substantively uniform. Do not manufacture divergence where none meaningfully exists.
 
 HISTORICAL PARALLEL RULES (critical — hallucination guard):
 - Only include a parallel when you are highly confident in the specific date, event, and outcome.

@@ -176,7 +176,11 @@ function formatFeedItems(items: FeedItem[]): string {
     const sourceLabel = count > 1
       ? `${count} sources: ${(item.allSources ?? [item.source]).join(', ')}`
       : `1 source: ${item.source}`;
-    return `[${i + 1}] [${sourceLabel}]\n    ${item.title}\n    ${item.summary}\n    ${item.link}`;
+    // Include per-source URLs so Claude can hyperlink outlet names in framing notes
+    const linkMap = item.sourceLinks && Object.keys(item.sourceLinks).length > 1
+      ? `\n    Source URLs: ${Object.entries(item.sourceLinks).map(([src, url]) => `${src}=${url}`).join(' | ')}`
+      : '';
+    return `[${i + 1}] [${sourceLabel}]\n    ${item.title}\n    ${item.summary}\n    ${item.link}${linkMap}`;
   }).join('\n\n');
 }
 

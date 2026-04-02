@@ -17,6 +17,8 @@ export interface FeedItem {
   sourceCount?: number;
   /** All source names that covered this story (first = primary) */
   allSources?: string[];
+  /** First article URL per source name, e.g. { CNN: "https://...", NPR: "https://..." } */
+  sourceLinks?: Record<string, string>;
 }
 
 export interface FeedGroup {
@@ -217,12 +219,18 @@ function deduplicateWithCounts(items: FeedItem[]): FeedItem[] {
     }
   }
 
-  // For each group, keep the first item but annotate with all source names
+  // For each group, keep the first item but annotate with all source names and their URLs
   const deduped = Array.from(groups.values()).map(group => {
     const primary = group[0];
-    // Deduplicate source names within the group (same source can appear multiple times)
-    const allSources = [...new Set(group.map(i => i.source))];
-    return { ...primary, sourceCount: allSources.length, allSources };
+    // First URL seen per source name (preserves order, deduplicates source names)
+    const sourceLinks: Record<string, string> = {};
+    for (const item of group) {
+      if (!sourceLinks[item.source] && item.link) {
+        sourceLinks[item.source] = item.link;
+      }
+    }
+    const allSources = Object.keys(sourceLinks);
+    return { ...primary, sourceCount: allSources.length, allSources, sourceLinks };
   });
 
   // Sort by source count descending — stories covered by more outlets rank higher
