@@ -10,9 +10,11 @@
  *      • Custom 404 → 200 /index.html (SPA fallback)
  *      • index.html + manifest.json: short TTL (60s)
  *      • /YYYY/* paths: long TTL (immutable)
+ *      • /sse         — no cache, proxied to SSE Lambda Function URL
  *      • Custom domain with ACM cert (us-east-1)
  *  - ACM certificate (DNS validated via Route53)
  *  - Route53 A+AAAA alias records → CloudFront
+ *  - SSE Lambda (streaming) + Function URL for real-time manifest push
  *
  * Outputs:
  *  - BucketName
@@ -29,6 +31,9 @@ import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNode from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as path from 'path';
 import { Construct } from 'constructs';
 
 export interface BriefingsHostingStackProps extends cdk.StackProps {
@@ -60,6 +65,52 @@ export class BriefingsHostingStack extends cdk.Stack {
     });
 
     this.bucketName = bucket.bucketName;
+
+    // -------------------------------------------------------------------------
+    // SSE Lambda — streams Server-Sent Events to connected browsers.
+    // Polls S3 HeadObject on manifest.json every 15s; fires SSE event when the
+    // ETag changes (i.e. a new briefing was published).  Placed in the hosting
+    // stack because it needs (a) the bucket name and (b) a CloudFront behavior.
+    //
+    // Scale note: each connected browser = one concurrent Lambda invocation.
+    // Default Lambda concurrency (1,000) handles hundreds of simultaneous users.
+    // For truly massive scale, replace with AWS IoT Core + MQTT over WebSocket.
+    // -------------------------------------------------------------------------
+    const sseLambda = new lambdaNode.NodejsFunction(this, 'SseLambda', {
+      functionName: `briefings-sse-${envName}`,
+      description: 'Streams SSE to browsers; fires event when manifest.json ETag changes',
+      entry: path.join(__dirname, '../../lambdas/briefing-sse/index.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      timeout: cdk.Duration.minutes(14),  // Max useful connection life; client auto-reconnects
+      memorySize: 256,
+      environment: {
+        BRIEFINGS_BUCKET_NAME: bucket.bucketName,
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: false,
+        sourceMap: true,
+        target: 'node22',
+        format: lambdaNode.OutputFormat.CJS,
+      },
+    });
+
+    // Grant SSE Lambda permission to HeadObject on the bucket
+    bucket.grantRead(sseLambda);
+
+    // Function URL with streaming mode — required for SSE
+    // No auth; CloudFront provides the access control layer (same-domain routing)
+    const sseFunctionUrl = sseLambda.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+    });
+
+    // Extract just the hostname from the Function URL (e.g. abc.lambda-url.us-east-1.on.aws)
+    // FunctionUrl.url is "https://{id}.lambda-url.{region}.on.aws/"
+    // Fn.select(2, Fn.split('/')) picks the host segment after splitting on '/'
+    const sseFunctionUrlHost = cdk.Fn.select(2, cdk.Fn.split('/', sseFunctionUrl.url));
 
     // -------------------------------------------------------------------------
     // ACM Certificate (DNS validated — Route53 auto-validates)
@@ -141,6 +192,31 @@ export class BriefingsHostingStack extends cdk.Stack {
           cachePolicy: immutablePolicy,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
           compress: true,
+        },
+
+        // SSE endpoint — never cache; proxy to the streaming Lambda Function URL.
+        //
+        // Why this works with CloudFront:
+        //   CloudFront forwards the GET to the Lambda origin and streams the
+        //   chunked response back to the browser chunk-by-chunk.  HTTP/2
+        //   (enabled on this distribution) multiplexes the SSE stream alongside
+        //   normal asset requests on the same connection — no separate TCP
+        //   connection needed.  CachingDisabled ensures CloudFront never
+        //   attempts to buffer or serve a cached copy of the event stream.
+        //
+        //   X-Accel-Buffering: no (set in Lambda response headers) signals to
+        //   any intermediary that the response must not be buffered.
+        '/sse': {
+          origin: new origins.HttpOrigin(sseFunctionUrlHost, {
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+            // Lambda Function URLs require HTTP/1.1 or HTTP/2; CloudFront handles this
+          }),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          // Forward all viewer headers except Host (Lambda Function URL has its own host)
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          compress: false,  // Must not compress a streaming response
         },
       },
 

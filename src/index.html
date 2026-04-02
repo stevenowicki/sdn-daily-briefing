@@ -449,6 +449,33 @@
       background: var(--border);
       margin: 28px 0;
     }
+
+    /* =========================================================
+       SSE toast — slides up from bottom when new briefing arrives
+    ========================================================= */
+    #sseToast {
+      position: fixed;
+      bottom: 1.75rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(5rem);
+      background: var(--masthead-bg);
+      color: var(--masthead-text);
+      padding: 0.6rem 1.25rem;
+      border-radius: 2rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 100;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    }
+    #sseToast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   </style>
 </head>
 <body>
@@ -489,6 +516,9 @@
       <button class="error-retry" id="retryBtn" onclick="loadManifest()">Try again</button>
     </div>
   </main>
+
+  <!-- SSE toast notification -->
+  <div id="sseToast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script>
     // =========================================================
@@ -730,15 +760,18 @@
     // =========================================================
     // Data loading
     // =========================================================
-    async function loadManifest() {
+    // silent=true: re-renders in place without showing the skeleton loader.
+    // Used by the SSE handler so the page updates seamlessly.
+    async function loadManifest(silent = false) {
       const skeleton = document.getElementById('skeleton');
       const content = document.getElementById('content');
       const errorState = document.getElementById('errorState');
 
-      // Reset to loading state
-      skeleton.hidden = false;
-      content.hidden = true;
-      errorState.hidden = true;
+      if (!silent) {
+        skeleton.hidden = false;
+        content.hidden = true;
+        errorState.hidden = true;
+      }
 
       try {
         const res = await fetch('/manifest.json', { cache: 'no-cache' });
@@ -749,10 +782,61 @@
         renderContent(data.briefings || []);
       } catch (err) {
         console.error('Failed to load manifest.json:', err);
-        skeleton.hidden = true;
-        errorState.hidden = false;
+        if (!silent) {
+          skeleton.hidden = true;
+          errorState.hidden = false;
+        }
       }
     }
+
+    // =========================================================
+    // SSE — live updates when new briefings are published
+    //
+    // The /sse endpoint is a Lambda Function URL proxied through CloudFront
+    // at the same domain.  No CORS needed (same-origin).
+    //
+    // The SSE Lambda runs for up to 13 minutes, sending heartbeat comments
+    // every 25 seconds and polling S3 for manifest ETag changes every 15s.
+    // When the Lambda closes (new briefing or natural 13-min expiry),
+    // EventSource automatically reconnects — that's part of the SSE spec.
+    // =========================================================
+    (function initSSE() {
+      if (typeof EventSource === 'undefined') return; // Safari < 9 fallback
+
+      const toast     = document.getElementById('sseToast');
+      let toastTimer  = null;
+
+      function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('visible');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('visible'), 6000);
+      }
+
+      function connect() {
+        const es = new EventSource('/sse');
+
+        es.onopen = () => console.log('[sse] Connected');
+
+        // The Lambda sends: data: {"type":"new-briefing"}\n\n
+        es.onmessage = async function(e) {
+          let payload;
+          try { payload = JSON.parse(e.data); } catch { return; }
+          if (payload.type !== 'new-briefing') return;
+
+          console.log('[sse] New briefing published — refreshing');
+          await loadManifest(/* silent= */ true);
+          showToast('New briefing just published ✨');
+        };
+
+        // onerror fires when the connection drops (Lambda closed after 13 min,
+        // or a transient network hiccup).  EventSource will retry automatically
+        // using the browser's built-in backoff — no manual reconnect needed.
+        es.onerror = () => console.log('[sse] Connection closed — browser will reconnect');
+      }
+
+      connect();
+    })();
 
     // =========================================================
     // Init
