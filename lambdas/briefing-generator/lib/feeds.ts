@@ -13,6 +13,10 @@ export interface FeedItem {
   link: string;
   pubDate: string;
   source: string;
+  /** How many distinct sources mentioned this story (set by deduplication) */
+  sourceCount?: number;
+  /** All source names that covered this story (first = primary) */
+  allSources?: string[];
 }
 
 export interface FeedGroup {
@@ -164,22 +168,43 @@ export async function fetchAllFeeds(): Promise<AllFeedItems> {
     }
   });
 
-  // Deduplicate within each category by title similarity
-  grouped.top = deduplicate(grouped.top);
-  grouped.nyc = deduplicate(grouped.nyc);
-  grouped.arts = deduplicate(grouped.arts);
+  // Deduplicate within each category by title similarity; annotate with source counts
+  grouped.top = deduplicateWithCounts(grouped.top);
+  grouped.nyc = deduplicateWithCounts(grouped.nyc);
+  grouped.arts = deduplicateWithCounts(grouped.arts);
 
   console.log(`[feeds] Totals — top:${grouped.top.length} nyc:${grouped.nyc.length} arts:${grouped.arts.length}`);
   return grouped;
 }
 
-/** Remove near-duplicate headlines (same first 60 chars) */
-function deduplicate(items: FeedItem[]): FeedItem[] {
-  const seen = new Set<string>();
-  return items.filter(item => {
+/**
+ * Deduplicate near-duplicate headlines (same first 60 chars) and annotate
+ * each surviving item with how many distinct sources covered the story.
+ * Results are sorted by source count descending so Claude sees the most
+ * widely-covered story first — a proxy for news prominence.
+ */
+function deduplicateWithCounts(items: FeedItem[]): FeedItem[] {
+  // Group items by title key
+  const groups = new Map<string, FeedItem[]>();
+  for (const item of items) {
     const key = item.title.toLowerCase().slice(0, 60).replace(/\s+/g, ' ');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    const group = groups.get(key);
+    if (group) {
+      group.push(item);
+    } else {
+      groups.set(key, [item]);
+    }
+  }
+
+  // For each group, keep the first item but annotate with all source names
+  const deduped = Array.from(groups.values()).map(group => {
+    const primary = group[0];
+    // Deduplicate source names within the group (same source can appear multiple times)
+    const allSources = [...new Set(group.map(i => i.source))];
+    return { ...primary, sourceCount: allSources.length, allSources };
   });
+
+  // Sort by source count descending — stories covered by more outlets rank higher
+  deduped.sort((a, b) => (b.sourceCount ?? 1) - (a.sourceCount ?? 1));
+  return deduped;
 }

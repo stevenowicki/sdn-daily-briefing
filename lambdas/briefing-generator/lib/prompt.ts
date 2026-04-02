@@ -31,6 +31,21 @@ WRITING STYLE
 - Use numbers: "$12B", "1,200 killed", "down 2.4%", not "millions" or "significant amounts".
 - Occasional dry wit is fine. Avoid forced cheerfulness.
 
+STORY PROMINENCE — READ THIS FIRST
+Each headline is prefixed with a source count: [7 sources: CNN, NPR, NYT, BBC, PBS, ABC, WaPo].
+This tells you how many independent news organizations are leading with that story.
+
+- 5+ sources: This is the dominant story of the day. It goes first and gets EXPANDED treatment:
+  a full paragraph (4–6 sentences), not the standard 2–3. If it is historically unprecedented
+  (first crewed moon landing in 50+ years, major war outbreak, landmark Supreme Court ruling,
+  once-in-a-generation event), make that weight explicit in how you write it.
+- 3–4 sources: Major story, lead its section, 3–4 sentences.
+- 1–2 sources: Standard treatment, 2–3 sentences.
+
+Stories within each section are already sorted by source count. DO NOT reorder them arbitrarily.
+A story covered by 8 sources outranks a story covered by 1 source even if the single-source
+story seems interesting. Use editorial judgment only to skip genuinely minor stories.
+
 CONTENT PRIORITIES
 - Top/World News: Major stories of global significance. US foreign policy, geopolitics, major disasters, significant elections. 4–6 stories. Skip pure celebrity or entertainment unless culturally significant.
 - US News: Domestic US stories not covered in Top News. Politics, Supreme Court, economy, federal policy, major cultural events. 3–5 stories.
@@ -239,17 +254,17 @@ ${data.markets}
 
 ---
 
-TOP / WORLD NEWS HEADLINES (pick the 4–6 most important; skip minor stories):
+TOP / WORLD NEWS HEADLINES (sorted by source count; pick the 4–6 most important; give expanded treatment to high-count stories; skip minor stories):
 ${data.topItems}
 
 ---
 
-NYC NEWS HEADLINES (pick the 4–6 most relevant to someone living in StuyTown):
+NYC NEWS HEADLINES (sorted by source count; pick the 4–6 most relevant to someone living in StuyTown):
 ${data.nycItems}
 
 ---
 
-ARTS FEED (ONLY include an Arts section if there are 1–3 genuinely noteworthy items; OMIT ENTIRELY if nothing meets the bar):
+ARTS FEED (sorted by source count; ONLY include an Arts section if there are 1–3 genuinely noteworthy items; OMIT ENTIRELY if nothing meets the bar):
 ${data.artsItems}
 
 ---

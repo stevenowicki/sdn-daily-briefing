@@ -104,12 +104,22 @@ function buildIsoTimestamp(isoDate: string, time: string): string {
   return `${isoDate}T${time}:00${etOffset}`;
 }
 
-/** Format feed items into a compact prompt-friendly string */
+/** Format feed items into a compact prompt-friendly string.
+ *
+ * Items arrive pre-sorted by sourceCount descending (most-covered first).
+ * The source label makes cross-wire prominence visible to Claude:
+ *   [7 sources: CNN, NPR, NYT, BBC, PBS, ABC, WaPo] → dominant story
+ *   [1 source: Gothamist]                           → single-outlet item
+ */
 function formatFeedItems(items: FeedItem[]): string {
   if (items.length === 0) return '(no items available)';
-  return items.slice(0, 30).map((item, i) =>
-    `[${i + 1}] ${item.title} (${item.source})\n    ${item.summary}\n    ${item.link}`
-  ).join('\n\n');
+  return items.slice(0, 30).map((item, i) => {
+    const count = item.sourceCount ?? 1;
+    const sourceLabel = count > 1
+      ? `${count} sources: ${(item.allSources ?? [item.source]).join(', ')}`
+      : `1 source: ${item.source}`;
+    return `[${i + 1}] [${sourceLabel}]\n    ${item.title}\n    ${item.summary}\n    ${item.link}`;
+  }).join('\n\n');
 }
 
 /** Format weather data for the prompt */
