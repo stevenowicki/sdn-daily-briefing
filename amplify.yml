@@ -41,8 +41,13 @@ frontend:
         # Invalidate CloudFront cache for index.html (manifest.json invalidated by briefing task)
         - aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/index.html" --region us-east-1
 
+        # Amplify requires a valid artifact directory even when we're CI-only.
+        # /dev/null is a device node, not a directory — it causes a CustomerError.
+        # Create an empty dir so the artifact step has something to collect.
+        - mkdir -p /tmp/amplify-artifacts
+
   artifacts:
-    # Amplify is CI-only here — no hosting artifacts to publish
-    baseDirectory: /dev/null
+    # Amplify is CI-only here — no hosting artifacts to publish (empty dir)
+    baseDirectory: /tmp/amplify-artifacts
     files:
       - '**/*'
