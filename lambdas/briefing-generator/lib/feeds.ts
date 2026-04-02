@@ -41,6 +41,8 @@ export const FEED_GROUPS: FeedGroup[] = [
   { category: 'top', name: 'CBS News',           url: 'https://www.cbsnews.com/latest/rss/main' },
   { category: 'top', name: 'Washington Post',    url: 'https://feeds.washingtonpost.com/rss/world' },
   { category: 'top', name: 'Washington Post US', url: 'https://feeds.washingtonpost.com/rss/national' },
+  { category: 'top', name: 'Reuters',            url: 'https://feeds.reuters.com/reuters/topNews' },
+  { category: 'top', name: 'Reuters US',         url: 'https://feeds.reuters.com/Reuters/domesticNews' },
 
   // NYC local news
   { category: 'nyc', name: 'Gothamist',          url: 'https://gothamist.com/feed' },
@@ -52,6 +54,7 @@ export const FEED_GROUPS: FeedGroup[] = [
   { category: 'nyc', name: 'NY1',                url: 'https://ny1.com/services/contentfeed.nyc%7call-boroughs%7cnews.landing.rss' },
 
   // Arts — NYC and nationally significant
+  { category: 'arts', name: 'Reuters Entertainment', url: 'https://feeds.reuters.com/reuters/entertainment' },
   { category: 'arts', name: 'BroadwayWorld',     url: 'https://www.broadwayworld.com/rss.cfm' },
   { category: 'arts', name: 'NYT Arts',          url: 'https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml' },
   { category: 'arts', name: 'NYT Theater',       url: 'https://rss.nytimes.com/services/xml/rss/nyt/Theater.xml' },
