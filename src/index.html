@@ -760,8 +760,12 @@
     // =========================================================
     // Data loading
     // =========================================================
+    // ETag of the last-fetched manifest — used for conditional GET polling.
+    // CloudFront returns 304 Not Modified (instantly, from cache) when unchanged.
+    let manifestETag = null;
+
     // silent=true: re-renders in place without showing the skeleton loader.
-    // Used by the SSE handler so the page updates seamlessly.
+    // Used by the background poll so the page updates seamlessly.
     async function loadManifest(silent = false) {
       const skeleton = document.getElementById('skeleton');
       const content = document.getElementById('content');
@@ -776,6 +780,7 @@
       try {
         const res = await fetch('/manifest.json', { cache: 'no-cache' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        manifestETag = res.headers.get('ETag');
         const data = await res.json();
         skeleton.hidden = true;
         content.hidden = false;
@@ -790,21 +795,31 @@
     }
 
     // =========================================================
-    // SSE — live updates when new briefings are published
+    // Live updates — conditional GET polling every 60 seconds
     //
-    // The /sse endpoint is a Lambda Function URL proxied through CloudFront
-    // at the same domain.  No CORS needed (same-origin).
+    // Why polling beats SSE for a 3×/day event source:
+    //   SSE requires one persistent Lambda invocation per connected browser tab.
+    //   At $0.0035/connection/14-min cycle, 100 users with open tabs 24/7
+    //   would cost ~$1,080/month.  Polling costs ~$0.50/month for the same load.
     //
-    // The SSE Lambda runs for up to 13 minutes, sending heartbeat comments
-    // every 25 seconds and polling S3 for manifest ETag changes every 15s.
-    // When the Lambda closes (new briefing or natural 13-min expiry),
-    // EventSource automatically reconnects — that's part of the SSE spec.
+    // How it works:
+    //   Every 60s, the client sends GET /manifest.json with the ETag it last saw
+    //   in an If-None-Match header.  CloudFront returns 304 Not Modified
+    //   instantly from cache when the content hasn't changed — no origin request,
+    //   no S3 access, no compute.  After the generator publishes a new briefing
+    //   and invalidates CloudFront, the next poll gets a 200 with the new
+    //   manifest and a changed ETag, triggering a silent re-render.
+    //
+    // Optimisations:
+    //   - Polling pauses when the tab is hidden (visibilitychange API) and
+    //     resumes with an immediate check when the tab regains focus.
+    //   - cache: 'no-store' bypasses the browser's own cache so the request
+    //     always reaches CloudFront (where the real ETag logic lives).
     // =========================================================
-    (function initSSE() {
-      if (typeof EventSource === 'undefined') return; // Safari < 9 fallback
-
-      const toast     = document.getElementById('sseToast');
-      let toastTimer  = null;
+    (function initPolling() {
+      const toast    = document.getElementById('sseToast');
+      let toastTimer = null;
+      let pollTimer  = null;
 
       function showToast(msg) {
         toast.textContent = msg;
@@ -813,29 +828,45 @@
         toastTimer = setTimeout(() => toast.classList.remove('visible'), 6000);
       }
 
-      function connect() {
-        const es = new EventSource('/sse');
+      async function poll() {
+        if (document.hidden || !manifestETag) return;
+        try {
+          const res = await fetch('/manifest.json', {
+            cache: 'no-store',
+            headers: { 'If-None-Match': manifestETag },
+          });
 
-        es.onopen = () => console.log('[sse] Connected');
+          if (res.status === 304) return; // CloudFront cache hit — nothing changed
+          if (!res.ok) return;
 
-        // The Lambda sends: data: {"type":"new-briefing"}\n\n
-        es.onmessage = async function(e) {
-          let payload;
-          try { payload = JSON.parse(e.data); } catch { return; }
-          if (payload.type !== 'new-briefing') return;
+          const newETag = res.headers.get('ETag');
+          if (!newETag || newETag === manifestETag) return;
 
-          console.log('[sse] New briefing published — refreshing');
-          await loadManifest(/* silent= */ true);
+          // ETag changed — new briefing is available
+          const data = await res.json();
+          manifestETag = newETag;
+          renderContent(data.briefings || []);
           showToast('New briefing just published ✨');
-        };
-
-        // onerror fires when the connection drops (Lambda closed after 13 min,
-        // or a transient network hiccup).  EventSource will retry automatically
-        // using the browser's built-in backoff — no manual reconnect needed.
-        es.onerror = () => console.log('[sse] Connection closed — browser will reconnect');
+          console.log('[poll] New briefing detected — page updated');
+        } catch { /* ignore transient network errors */ }
       }
 
-      connect();
+      function startPolling() {
+        clearInterval(pollTimer);
+        pollTimer = setInterval(poll, 60_000);
+      }
+
+      // Pause when tab goes to background; resume + immediate check on focus
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+          clearInterval(pollTimer);
+        } else {
+          poll();
+          startPolling();
+        }
+      });
+
+      startPolling();
     })();
 
     // =========================================================
