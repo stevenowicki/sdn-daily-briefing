@@ -177,14 +177,9 @@ export class BriefingsGeneratorStack extends cdk.Stack {
       resources: ['arn:aws:kms:*:*:alias/aws/ssm'],
     }));
 
-    // Breaking news state — get + put (mutable runtime state, plain String not SecureString)
-    generatorLambda.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ['ssm:GetParameter', 'ssm:PutParameter'],
-      resources: [
-        `arn:aws:ssm:${this.region}:${this.account}:parameter/briefings/breaking-state`,
-      ],
-    }));
+    // Breaking news state is stored at s3://BUCKET/_state/breaking-checker.json
+    // No additional IAM policy needed — the existing s3:GetObject/PutObject on
+    // the bucket wildcard already covers this key.
 
     // -----------------------------------------------------------------------
     // Lambda: briefing-pushover-notifier

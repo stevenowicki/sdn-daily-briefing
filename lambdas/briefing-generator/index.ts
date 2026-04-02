@@ -16,7 +16,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
-import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -80,9 +80,9 @@ interface CheckBreakingEvent {
 type LambdaEvent = ScheduleEvent | CheckBreakingEvent;
 
 // ---------------------------------------------------------------------------
-// Breaking news state (persisted in SSM between invocations)
+// Breaking news state (persisted in S3 between invocations)
 // ---------------------------------------------------------------------------
-const SSM_BREAKING_STATE    = '/briefings/breaking-state';
+const BREAKING_STATE_KEY    = '_state/breaking-checker.json';
 const BREAKING_THRESHOLD    = 7;   // sources required to trigger
 const BREAKING_COOLDOWN_H   = 4;   // hours before same story can re-trigger
 
@@ -108,19 +108,21 @@ function isNearScheduledBriefing(): boolean {
 
 async function getBreakingState(): Promise<BreakingState | null> {
   try {
-    const res = await ssm.send(new GetParameterCommand({ Name: SSM_BREAKING_STATE }));
-    return JSON.parse(res.Parameter?.Value ?? 'null') as BreakingState | null;
-  } catch {
-    return null;
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: BREAKING_STATE_KEY }));
+    const body = await res.Body?.transformToString('utf-8');
+    return body ? JSON.parse(body) as BreakingState : null;
+  } catch (err: any) {
+    if (err.name === 'NoSuchKey') return null;
+    throw err;
   }
 }
 
 async function saveBreakingState(state: BreakingState): Promise<void> {
-  await ssm.send(new PutParameterCommand({
-    Name: SSM_BREAKING_STATE,
-    Value: JSON.stringify(state),
-    Type: 'String',
-    Overwrite: true,
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: BREAKING_STATE_KEY,
+    Body: JSON.stringify(state),
+    ContentType: 'application/json',
   }));
 }
 

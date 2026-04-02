@@ -284,6 +284,23 @@ Ideas and explorations deferred from active development. Not prioritized or sche
 
 **What to explore:** Build a small proof-of-concept using IoT Core to understand the credential flow and MQTT-over-WebSocket in the browser. The briefings app isn't the right vehicle (wrong scale, no-external-deps rule), but a standalone experiment would be a good learning exercise.
 
+### Migrate application state from S3 to DynamoDB
+
+**Context:** The breaking news checker currently persists its cooldown state (`{lastStoryHash, lastTriggeredAt}`) as a JSON file at `s3://sdn-briefings-prod/_state/breaking-checker.json`. This was chosen over the original SSM Parameter Store implementation (which was a clear code smell — SSM is for config and secrets, not mutable runtime state), but S3 object storage is still a pragmatic workaround rather than the right tool.
+
+**Why DynamoDB is the correct answer:** As the number of stateful features grows — breaking news cooldown, story arc tracking, "What to Watch" personalization, read history, etc. — S3 JSON files become increasingly awkward: no atomic operations, no TTL support, no query capability, and a growing list of files that have to be managed manually.
+
+DynamoDB is designed precisely for this pattern: low-latency key-value reads/writes, TTL for automatic expiry of stale state, conditional writes for safe concurrent updates, and on-demand pricing that makes it essentially free at this scale (single-digit reads/writes per hour → well within the free tier).
+
+**What migration looks like:**
+- One CDK-managed DynamoDB table (`briefings-state-{env}`) with a `pk` partition key (string)
+- Breaking checker: `pk = "breaking-checker"`, attributes `lastStoryHash` and `lastTriggeredAt`, TTL set to `lastTriggeredAt + 24h`
+- Story arc tracking (future): `pk = "story-arc#{hash}"`, with full arc history
+- Replace `s3.send(GetObjectCommand / PutObjectCommand)` calls in the breaking checker with `dynamodb.send(GetItemCommand / PutItemCommand)`
+- Remove `_state/` key prefix convention from S3 bucket
+
+**When to do this:** When a second stateful feature beyond breaking news is added (likely story arc tracking), at which point the case for a proper data store is clear and the migration touches multiple things at once.
+
 ### Public push notifications
 
 **Context:** Briefing-generated events currently fan out to Pushover (personal iPhone notification) and Slack (#briefings). There's no mechanism for other users of the site to opt in to push notifications.
