@@ -262,4 +262,39 @@ Let's add an arts section to the sections we already have in the briefing. This 
 
 ---
 
+---
+
+## Backlog
+
+Ideas and explorations deferred from active development. Not prioritized or scheduled.
+
+### Affordable SSE for real-time updates
+
+**Context:** The homepage currently polls `manifest.json` every 60 seconds using a conditional GET (`If-None-Match`). CloudFront returns `304 Not Modified` from cache for 99.9% of polls — essentially free. New briefings appear within 60 seconds of publication, which is imperceptible for a 3×/day schedule.
+
+**Why we didn't use SSE now:** True Server-Sent Events require one persistent server-side connection per connected browser tab. On Lambda, "keeping a connection open" costs the same as "running compute" — ~$0.0035/user/14-min cycle, or ~$1,080/month at 100 concurrent users with tabs open 24/7. That's not the right tool for a signal that fires 3 times a day.
+
+**The interesting problem:** SSE at scale requires decoupling connection management from compute. The approaches worth understanding:
+
+- **AWS IoT Core + MQTT over WebSocket** — the AWS-native answer. IoT Core manages millions of persistent connections at $0.08/million device-minutes. The Lambda publishes to an IoT topic when a briefing is ready; connected browsers receive it immediately. Requires Cognito Identity Pools to issue temporary browser credentials, and MQTT.js in the browser (which would violate the current no-external-deps rule). Scales to billions of connections.
+
+- **ECS Fargate + Redis Pub/Sub** — persistent SSE servers behind an ALB. Each server holds N open connections cheaply (connections are file descriptors, not threads). When a briefing is published, Lambda publishes to a Redis channel; all SSE servers broadcast to their connected clients. Horizontal scaling via Auto Scaling. More ops overhead than Lambda but the right model for SSE.
+
+- **Managed pub/sub (Pusher, Ably, etc.)** — delegates the connection layer entirely. Simple SDK, real-time delivery, pay-per-message pricing. Adds an external dependency and vendor relationship.
+
+**What to explore:** Build a small proof-of-concept using IoT Core to understand the credential flow and MQTT-over-WebSocket in the browser. The briefings app isn't the right vehicle (wrong scale, no-external-deps rule), but a standalone experiment would be a good learning exercise.
+
+### Public push notifications
+
+**Context:** Briefing-generated events currently fan out to Pushover (personal iPhone notification) and Slack (#briefings). There's no mechanism for other users of the site to opt in to push notifications.
+
+**Options evaluated (all deferred):**
+- **Web Push API / PWA** — browser-native, no app required, but requires a service worker and significant scope expansion to make the site a PWA.
+- **ntfy.sh** — self-hostable push notification service, but requires users to install an obscure third-party app.
+- **Pushover public channel** — simplest option, but requires every subscriber to install and pay for Pushover.
+
+**What to explore:** Revisit when/if the site has an audience beyond a single user. Web Push is the cleanest long-term answer; the service worker complexity is the main deterrent.
+
+---
+
 *Generated April 1, 2026 · briefings.stevenowicki.com project*
