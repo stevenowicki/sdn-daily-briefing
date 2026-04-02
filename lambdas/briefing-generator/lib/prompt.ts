@@ -144,7 +144,7 @@ export const HTML_TEMPLATE = `<!DOCTYPE html>
       .market-label { color: #f1f5f9 !important; }
       .market-row { border-bottom-color: #334155 !important; }
       .market-sub { color: #64748b !important; }
-      .situation-room-card { border-color: #ef4444 !important; }
+      .situation-room-card { border-color: #ef4444 !important; background: #1c0a0a !important; }
       .situation-room-badge { color: #ef4444 !important; border-color: #7f1d1d !important; background: #150505 !important; }
       .situation-room-headline { color: #f1f5f9 !important; }
       .situation-room-lead { color: #94a3b8 !important; }

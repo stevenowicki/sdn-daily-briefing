@@ -461,7 +461,7 @@ async function generateBriefing(event: ScheduleEvent): Promise<void> {
   const claudeStart = Date.now();
   const message = await anthropic.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 8192,
+    max_tokens: 16384,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(promptData) }],
   });

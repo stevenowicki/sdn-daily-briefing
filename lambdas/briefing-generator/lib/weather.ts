@@ -39,9 +39,7 @@ export interface WeatherData {
   };
 }
 
-export async function fetchWeather(): Promise<WeatherData> {
-  // Use coordinates for StuyTown/Peter Cooper Village to avoid wttr.in
-  // misresolving "10010" as a location in Taiwan instead of Manhattan.
+async function fetchWeatherOnce(): Promise<WeatherData> {
   const url = `https://wttr.in/40.7282,-73.9842?format=j1`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
@@ -99,5 +97,19 @@ export async function fetchWeather(): Promise<WeatherData> {
     };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetch weather with one automatic retry on transient failure (HTTP 5xx, network error).
+ * wttr.in occasionally returns HTTP 500; a single retry a few seconds later usually succeeds.
+ */
+export async function fetchWeather(): Promise<WeatherData> {
+  try {
+    return await fetchWeatherOnce();
+  } catch (err) {
+    console.warn('[weather] First attempt failed, retrying in 5s:', (err as Error).message);
+    await new Promise(r => setTimeout(r, 5000));
+    return fetchWeatherOnce();
   }
 }
